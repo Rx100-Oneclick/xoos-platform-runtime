@@ -1,26 +1,42 @@
 {
   "name": "@xoos/runtime",
   "version": "0.1.0",
+  "description": "XOOS Runtime SDK for loading and orchestrating XOOS Microapps",
   "type": "module",
+
   "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+
+  "files": [
+    "dist"
+  ],
+
   "sideEffects": false,
+
+  "publishConfig": {
+    "access": "public"
+  },
+
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
+
   "dependencies": {
     "@xoos/contracts": "workspace:*"
   },
+
   "devDependencies": {
     "rimraf": "^6.0.1",
     "tsup": "^8.5.0",
