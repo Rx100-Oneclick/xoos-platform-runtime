@@ -1,17 +1,9 @@
 {
-  "name": "@xoos/runtime",
+  "name": "@xoos/runtime-bff",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": ["dist"],
-  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -19,7 +11,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@xoos/contracts": "workspace:*"
+    "@supabase/supabase-js": "^2.57.4",
+    "@xoos/contracts": "workspace:*",
+    "jose": "^6.1.0"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",
