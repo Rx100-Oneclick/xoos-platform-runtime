@@ -21,6 +21,14 @@ export class HttpClient {
     });
   }
 
+  private buildUrl(path: string): string {
+    const base = this.baseUrl.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const url = new URL(`${base}${normalizedPath}`);
+    url.searchParams.set("client_id", this.clientId);
+    return url.toString();
+  }
+
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const token = await this.auth.getAccessToken();
     const controller = new AbortController();
@@ -28,7 +36,7 @@ export class HttpClient {
     const traceId = crypto.randomUUID();
 
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}${path}`, {
+      const response = await fetch(this.buildUrl(path), {
         ...init,
         signal: controller.signal,
         headers: {
