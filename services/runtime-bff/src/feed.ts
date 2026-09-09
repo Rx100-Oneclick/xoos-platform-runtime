@@ -7,7 +7,8 @@ export async function buildRuntimeFeed(
   db: SupabaseClient,
   config: RuntimeBffConfig,
   identity: XOIdentity,
-  clientId: string
+  clientId: string,
+  environment: string
 ): Promise<XOOSRuntimeFeed> {
   assertClientBinding(identity, clientId);
 
@@ -16,7 +17,7 @@ export async function buildRuntimeFeed(
     .from("xoos_client_microapp_entitlements")
     .select("microapp_id,pinned_version,version_policy")
     .eq("client_id", clientId)
-    .eq("environment", config.environment)
+    .eq("environment", environment)
     .eq("is_enabled", true);
 
   if (entitlementError) throw new HttpError(500, "FEED_ENTITLEMENT_LOOKUP_FAILED", entitlementError.message);
@@ -46,7 +47,7 @@ export async function buildRuntimeFeed(
     .from("xoos_microapp_deployments")
     .select("microapp_id,environment,version,manifest_url,status")
     .in("microapp_id", ids)
-    .eq("environment", config.environment)
+    .eq("environment", environment)
     .eq("status", "active");
 
   if (deploymentError) throw new HttpError(500, "FEED_DEPLOYMENT_LOOKUP_FAILED", deploymentError.message);
