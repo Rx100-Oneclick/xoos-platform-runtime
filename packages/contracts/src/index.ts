@@ -56,3 +56,29 @@ export interface XOOSTelemetryEvent {
   occurredAt: string;
   attributes?: Record<string, string | number | boolean | null>;
 }
+
+export interface XOOSMicroappBridge {
+  context: XOOSRuntimeContext;
+  navigation: {
+    navigate: (microappKey: string, target?: HTMLElement) => Promise<void>;
+  };
+  events: {
+    emit: (event: string, payload?: unknown) => void;
+    on: (event: string, handler: (payload: unknown) => void) => () => void;
+  };
+  services: {
+    request: <T>(capability: string, input?: unknown, microappKey?: string) => Promise<T>;
+  };
+  telemetry: {
+    track: (
+      event: string,
+      attributes?: Record<string, string | number | boolean | null>,
+      microappKey?: string
+    ) => Promise<void>;
+  };
+}
+
+export interface XOOSMicroappElement extends HTMLElement {
+  xoos?: XOOSMicroappBridge;
+  xoosProps?: Record<string, unknown>;
+}
