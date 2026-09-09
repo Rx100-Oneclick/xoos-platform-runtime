@@ -1,4 +1,4 @@
-import type { XOOSRuntimeContext } from "@xoos/contracts";
+import type { XOOSMicroappElement } from "@xoos/contracts";
 
 export interface XOOSRuntimeOptions {
   clientId: string;
@@ -20,21 +20,8 @@ export interface XOOSMountedMicroapp {
   unmount: () => Promise<void>;
 }
 
-export interface XOOSMicroappBridge {
-  context: XOOSRuntimeContext;
-  navigation: {
-    navigate: (microappKey: string, target?: HTMLElement) => Promise<void>;
-  };
-  events: {
-    emit: (event: string, payload?: unknown) => void;
-    on: (event: string, handler: (payload: unknown) => void) => () => void;
-  };
-  services: {
-    request: <T>(capability: string, input?: unknown, microappKey?: string) => Promise<T>;
-  };
-}
+/** @deprecated Import XOOSMicroappBridge from @xoos/contracts. */
+export type { XOOSMicroappBridge } from "@xoos/contracts";
 
-export interface XOOSRuntimeElement extends HTMLElement {
-  xoos?: XOOSMicroappBridge;
-  xoosProps?: Record<string, unknown>;
-}
+/** @deprecated Import XOOSMicroappElement from @xoos/contracts. */
+export type XOOSRuntimeElement = XOOSMicroappElement;

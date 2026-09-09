@@ -1,7 +1,9 @@
 import type {
   XOOSCapabilityResponse,
+  XOOSMicroappBridge,
   XOOSRuntimeContext,
-  XOOSRuntimeFeed
+  XOOSRuntimeFeed,
+  XOOSTelemetryEvent
 } from "@xoos/contracts";
 import { XOOSRuntimeError } from "./errors/XOOSRuntimeError";
 import { AuthManager } from "./managers/AuthManager";
@@ -10,7 +12,6 @@ import { HttpClient } from "./managers/HttpClient";
 import { ManifestManager } from "./managers/ManifestManager";
 import { ModuleLoader } from "./managers/ModuleLoader";
 import type {
-  XOOSMicroappBridge,
   XOOSMountedMicroapp,
   XOOSMountOptions,
   XOOSRuntimeElement,
@@ -127,6 +128,26 @@ export class XOOSRuntime {
     return response.data as T;
   }
 
+  async trackTelemetry(
+    event: string,
+    attributes?: Record<string, string | number | boolean | null>,
+    microappKey?: string
+  ): Promise<void> {
+    this.ensureInitialized();
+    const payload: XOOSTelemetryEvent = {
+      event,
+      microappKey,
+      occurredAt: new Date().toISOString(),
+      attributes
+    };
+    try {
+      await this.http.post<{ ok: boolean; traceId?: string }>("/v1/telemetry", payload);
+    } catch (error) {
+      // Telemetry is best-effort and must never break Microapp execution.
+      this.report(error);
+    }
+  }
+
   async destroy(): Promise<void> {
     for (const key of [...this.mounted.keys()]) await this.unmount(key);
     this.events.clear();
@@ -146,6 +167,9 @@ export class XOOSRuntime {
       services: {
         request: <T>(capability: string, input?: unknown, microappKey?: string) =>
           this.requestCapability<T>(capability, input, microappKey)
+      },
+      telemetry: {
+        track: (event, attributes, microappKey) => this.trackTelemetry(event, attributes, microappKey)
       }
     };
   }

@@ -4,7 +4,6 @@ export type {
   XOOSRuntimeOptions,
   XOOSMountOptions,
   XOOSMountedMicroapp,
-  XOOSMicroappBridge,
   XOOSRuntimeElement
 } from "./types/runtime";
 export type {
@@ -13,5 +12,8 @@ export type {
   XOOSFeedMicroapp,
   XOOSMicroappManifest,
   XOOSCapabilityRequest,
-  XOOSCapabilityResponse
+  XOOSCapabilityResponse,
+  XOOSMicroappBridge,
+  XOOSMicroappElement,
+  XOOSTelemetryEvent
 } from "@xoos/contracts";
