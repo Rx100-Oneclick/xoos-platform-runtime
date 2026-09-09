@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.57.4",
+    "@xoos/contracts": "../../../packages/contracts/src/index.ts",
+    "jose": "npm:jose@6.1.0"
+  }
+}
