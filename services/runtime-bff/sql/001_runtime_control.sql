@@ -17,7 +17,7 @@ create table if not exists xoos_control.xoos_microapp_deployments (
 
 create table if not exists xoos_control.xoos_client_microapp_entitlements (
   uuid uuid primary key default gen_random_uuid(),
-  client_id text not null,
+  client_id text not null references public.oauth_clients(client_id) on delete cascade,
   microapp_id uuid not null references xoos_control.xoos_microapps(uuid) on delete cascade,
   environment text not null check (environment in ('development','staging','production')),
   is_enabled boolean not null default true,
