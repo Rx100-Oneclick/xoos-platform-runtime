@@ -57,6 +57,24 @@ export interface XOOSTelemetryEvent {
   attributes?: Record<string, string | number | boolean | null>;
 }
 
+export interface XOOSDataSourceConfig {
+  projectKey: string;
+  provider: "supabase";
+  supabaseUrl: string;
+  publishableKey: string;
+}
+
+export interface XOOSDataAccessSession {
+  accessToken: string;
+  expiresAt: number;
+  dataSource: XOOSDataSourceConfig;
+}
+
+export interface XOOSDataBridge {
+  getAccessToken: (projectKey: string) => Promise<string>;
+  getProjectConfig: (projectKey: string) => Promise<XOOSDataSourceConfig>;
+}
+
 export interface XOOSMicroappBridge {
   context: XOOSRuntimeContext;
   navigation: {
@@ -69,6 +87,7 @@ export interface XOOSMicroappBridge {
   services: {
     request: <T>(capability: string, input?: unknown, microappKey?: string) => Promise<T>;
   };
+  data: XOOSDataBridge;
   telemetry: {
     track: (
       event: string,
