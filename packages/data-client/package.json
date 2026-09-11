@@ -1,0 +1,35 @@
+{
+  "name": "@xoos/data-client",
+  "version": "0.1.0",
+  "description": "XOOS shared Supabase data client backed by the XOOS Runtime data bridge",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rimraf dist",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "@xoos/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
