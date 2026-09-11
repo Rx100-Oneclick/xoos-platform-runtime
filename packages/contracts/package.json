@@ -1,30 +1,24 @@
 {
   "name": "@xoos/contracts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared contracts for the XOOS Runtime platform",
   "type": "module",
-
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-
   "files": [
     "dist"
   ],
-
   "sideEffects": false,
-
   "publishConfig": {
     "access": "public"
   },
-
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -32,7 +26,6 @@
     "clean": "rimraf dist",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
-
   "devDependencies": {
     "rimraf": "^6.0.1",
     "tsup": "^8.5.0",
