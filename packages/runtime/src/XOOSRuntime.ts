@@ -7,6 +7,7 @@ import type {
 } from "@xoos/contracts";
 import { XOOSRuntimeError } from "./errors/XOOSRuntimeError";
 import { AuthManager } from "./managers/AuthManager";
+import { DataTokenManager } from "./managers/DataTokenManager";
 import { EventManager } from "./managers/EventManager";
 import { HttpClient } from "./managers/HttpClient";
 import { ManifestManager } from "./managers/ManifestManager";
@@ -27,6 +28,7 @@ export class XOOSRuntime {
   private readonly mounted = new Map<string, HTMLElement>();
   private readonly auth: AuthManager;
   private readonly http: HttpClient;
+  private readonly data: DataTokenManager;
   private readonly events = new EventManager();
   private readonly manifests = new ManifestManager();
   private readonly modules = new ModuleLoader();
@@ -41,6 +43,7 @@ export class XOOSRuntime {
       this.auth,
       options.requestTimeoutMs
     );
+    this.data = new DataTokenManager(this.http);
   }
 
   async initialize(): Promise<void> {
@@ -143,7 +146,6 @@ export class XOOSRuntime {
     try {
       await this.http.post<{ ok: boolean; traceId?: string }>("/v1/telemetry", payload);
     } catch (error) {
-      // Telemetry is best-effort and must never break Microapp execution.
       this.report(error);
     }
   }
@@ -151,6 +153,7 @@ export class XOOSRuntime {
   async destroy(): Promise<void> {
     for (const key of [...this.mounted.keys()]) await this.unmount(key);
     this.events.clear();
+    this.data.clear();
     this.context = null;
     this.feed = null;
     this.initialized = false;
@@ -167,6 +170,10 @@ export class XOOSRuntime {
       services: {
         request: <T>(capability: string, input?: unknown, microappKey?: string) =>
           this.requestCapability<T>(capability, input, microappKey)
+      },
+      data: {
+        getAccessToken: (projectKey) => this.data.getAccessToken(projectKey),
+        getProjectConfig: (projectKey) => this.data.getProjectConfig(projectKey)
       },
       telemetry: {
         track: (event, attributes, microappKey) => this.trackTelemetry(event, attributes, microappKey)

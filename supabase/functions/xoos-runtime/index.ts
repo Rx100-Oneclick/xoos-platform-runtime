@@ -8,6 +8,10 @@ function required(name: string): string {
   return value;
 }
 
+function optional(name: string): string | undefined {
+  return Deno.env.get(name)?.trim() || undefined;
+}
+
 function getDefaultSupabaseSecretKey(): string {
   const raw = required("SUPABASE_SECRET_KEYS");
   let parsed: Record<string, string>;
@@ -30,7 +34,11 @@ const config: RuntimeBffConfig = {
   supabaseSecretKey: getDefaultSupabaseSecretKey(),
   runtimeVersion: Deno.env.get("XOOS_RUNTIME_VERSION")?.trim() || "0.1.0",
   minimumRuntimeVersion:
-    Deno.env.get("XOOS_MINIMUM_RUNTIME_VERSION")?.trim() || "0.1.0"
+    Deno.env.get("XOOS_MINIMUM_RUNTIME_VERSION")?.trim() || "0.1.0",
+  dataJwtPrivateJwk: optional("XOOS_DATA_JWT_PRIVATE_JWK"),
+  dataJwtIssuer: optional("XOOS_DATA_JWT_ISSUER") || "xoos-data",
+  dataJwtAudience: optional("XOOS_DATA_JWT_AUDIENCE") || "authenticated",
+  dataJwtTtlSeconds: Number.parseInt(optional("XOOS_DATA_JWT_TTL_SECONDS") || "600", 10)
 };
 
 const handler = createRuntimeBffHandler(config);
