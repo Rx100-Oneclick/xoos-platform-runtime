@@ -15,5 +15,8 @@ export type {
   XOOSCapabilityResponse,
   XOOSMicroappBridge,
   XOOSMicroappElement,
+  XOOSDataBridge,
+  XOOSDataSourceConfig,
+  XOOSDataAccessSession,
   XOOSTelemetryEvent
 } from "@xoos/contracts";
