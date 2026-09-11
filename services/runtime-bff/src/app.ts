@@ -2,6 +2,7 @@ import type { XOOSRuntimeContext } from "@xoos/contracts";
 import { authenticateRequest, HttpError } from "./auth";
 import { executeCapability } from "./capabilities";
 import type { RuntimeBffConfig } from "./config";
+import { issueDataAccessSession } from "./data";
 import { buildRuntimeFeed, assertClientBinding } from "./feed";
 import { buildCorsHeaders, validateClientOrigin } from "./origin";
 import { createRegistryClient } from "./supabase";
@@ -87,6 +88,20 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
           clientRegistration.environment
         );
         return json(feed, 200, cors, traceId);
+      }
+
+      if (request.method === "POST" && path === "/v1/data/token") {
+        const body = await safeJson(request);
+        const projectKey = typeof body.projectKey === "string" ? body.projectKey : "";
+        const session = await issueDataAccessSession(
+          db,
+          config,
+          identity,
+          headerClientId,
+          clientRegistration.environment,
+          projectKey
+        );
+        return json(session, 200, cors, traceId);
       }
 
       if (request.method === "POST" && path.startsWith("/v1/capabilities/")) {
