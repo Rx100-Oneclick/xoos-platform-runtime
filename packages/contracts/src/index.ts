@@ -75,10 +75,18 @@ export interface XOOSDataBridge {
   getProjectConfig: (projectKey: string) => Promise<XOOSDataSourceConfig>;
 }
 
+export interface XOOSNavigationOptions {
+  target?: HTMLElement;
+  props?: Record<string, unknown>;
+}
+
 export interface XOOSMicroappBridge {
   context: XOOSRuntimeContext;
   navigation: {
-    navigate: (microappKey: string, target?: HTMLElement) => Promise<void>;
+    navigate: (
+      microappKey: string,
+      targetOrOptions?: HTMLElement | XOOSNavigationOptions
+    ) => Promise<void>;
   };
   events: {
     emit: (event: string, payload?: unknown) => void;
