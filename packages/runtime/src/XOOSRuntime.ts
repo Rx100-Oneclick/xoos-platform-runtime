@@ -1,6 +1,7 @@
 import type {
   XOOSCapabilityResponse,
   XOOSMicroappBridge,
+  XOOSNavigationOptions,
   XOOSRuntimeContext,
   XOOSRuntimeFeed,
   XOOSTelemetryEvent
@@ -20,7 +21,7 @@ import type {
 } from "./types/runtime";
 
 export class XOOSRuntime {
-  static readonly version = "1.0.0";
+  static readonly version = "1.0.1";
 
   private initialized = false;
   private context: XOOSRuntimeContext | null = null;
@@ -76,6 +77,8 @@ export class XOOSRuntime {
     const element = document.createElement(manifest.elementName) as XOOSRuntimeElement;
     element.xoos = this.createBridge();
     element.xoosProps = options.props;
+
+    this.clearMountedAtTarget(options.target);
     options.target.replaceChildren(element);
     this.mounted.set(microappKey, element);
     return { microappKey, element, unmount: async () => this.unmount(microappKey) };
@@ -86,10 +89,27 @@ export class XOOSRuntime {
     this.mounted.delete(microappKey);
   }
 
-  async navigate(microappKey: string, target?: HTMLElement): Promise<void> {
-    const destination = target ?? this.firstMountedParent();
-    if (!destination) throw new XOOSRuntimeError("NAVIGATION_TARGET_MISSING", "No target is available for Runtime navigation.");
-    await this.mount(microappKey, { target: destination });
+  async navigate(
+    microappKey: string,
+    targetOrOptions?: HTMLElement | XOOSNavigationOptions
+  ): Promise<void> {
+    const navigationOptions: XOOSNavigationOptions =
+      targetOrOptions instanceof HTMLElement
+        ? { target: targetOrOptions }
+        : targetOrOptions ?? {};
+
+    const destination = navigationOptions.target ?? this.firstMountedParent();
+    if (!destination) {
+      throw new XOOSRuntimeError(
+        "NAVIGATION_TARGET_MISSING",
+        "No target is available for Runtime navigation."
+      );
+    }
+
+    await this.mount(microappKey, {
+      target: destination,
+      props: navigationOptions.props
+    });
   }
 
   async requestCapability<T>(capability: string, input: unknown = {}, microappKey?: string): Promise<T> {
@@ -121,7 +141,10 @@ export class XOOSRuntime {
   private createBridge(): XOOSMicroappBridge {
     return {
       context: this.context!,
-      navigation: { navigate: (microappKey, target) => this.navigate(microappKey, target) },
+      navigation: {
+        navigate: (microappKey, targetOrOptions) =>
+          this.navigate(microappKey, targetOrOptions)
+      },
       events: {
         emit: (event, payload) => this.events.emit(event, payload),
         on: (event, handler) => this.events.on(event, handler)
@@ -139,9 +162,19 @@ export class XOOSRuntime {
     };
   }
 
+  private clearMountedAtTarget(target: HTMLElement): void {
+    for (const [key, element] of this.mounted.entries()) {
+      if (element.parentElement === target || !element.isConnected) {
+        this.mounted.delete(key);
+      }
+    }
+  }
+
   private firstMountedParent(): HTMLElement | null {
-    const element = this.mounted.values().next().value as HTMLElement | undefined;
-    return element?.parentElement ?? null;
+    for (const element of this.mounted.values()) {
+      if (element.parentElement) return element.parentElement;
+    }
+    return null;
   }
 
   private ensureInitialized(): void {
