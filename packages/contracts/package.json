@@ -1,6 +1,6 @@
 {
   "name": "@xoos/contracts",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared contracts for the XOOS Runtime platform",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,17 +12,13 @@
       "import": "./dist/index.js"
     }
   },
-
   "files": [
     "dist"
   ],
-
   "sideEffects": false,
-
   "publishConfig": {
     "access": "public"
   },
-
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
