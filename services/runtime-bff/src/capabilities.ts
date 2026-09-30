@@ -1,11 +1,13 @@
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
+import { proxyXOAuthList } from "./xo-auth-capabilities";
 
 export interface CapabilityContext {
   identity: XOIdentity;
   clientId: string;
   traceId: string;
+  xoAuthFunctionsBaseUrl: string;
   microappKey?: string;
 }
 
@@ -18,6 +20,16 @@ handlers.set("runtime.health", async (context) => ({
   userId: context.identity.userId,
   clientId: context.clientId
 }));
+
+handlers.set(
+  "xo-auth.applications.list",
+  (context, input) => proxyXOAuthList(context, "xo-applications", input)
+);
+
+handlers.set(
+  "xo-auth.organization-members.list",
+  (context, input) => proxyXOAuthList(context, "xo-organization-members", input)
+);
 
 export function registerCapability(name: string, handler: Handler): void {
   if (!name.trim()) throw new Error("Capability name is required.");

@@ -113,6 +113,7 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
             identity,
             clientId: headerClientId,
             traceId,
+            xoAuthFunctionsBaseUrl: config.xoAuthFunctionsBaseUrl,
             microappKey: typeof body.microappKey === "string" ? body.microappKey : undefined
           },
           body.input
