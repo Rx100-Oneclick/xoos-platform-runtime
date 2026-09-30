@@ -120,3 +120,134 @@ export async function proxyXOAuthList(
     clearTimeout(timeout);
   }
 }
+
+
+interface XOOrganizationMemberUpdateInput {
+  memberId?: unknown;
+  roleId?: unknown;
+  status?: unknown;
+  activationDetails?: unknown;
+  expiryDetails?: unknown;
+}
+
+function parseOrganizationMemberUpdateInput(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new HttpError(
+      400,
+      "CAPABILITY_INPUT_INVALID",
+      "Organization-member update input must be an object."
+    );
+  }
+
+  const value = input as XOOrganizationMemberUpdateInput;
+  if (typeof value.memberId !== "string" || !value.memberId.trim()) {
+    throw new HttpError(
+      400,
+      "CAPABILITY_INPUT_INVALID",
+      "memberId is required."
+    );
+  }
+
+  const payload: Record<string, unknown> = {
+    memberId: value.memberId.trim()
+  };
+
+  if (Object.prototype.hasOwnProperty.call(value, "roleId")) {
+    payload.roleId = value.roleId;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "status")) {
+    payload.status = value.status;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "activationDetails")) {
+    payload.activationDetails = value.activationDetails;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "expiryDetails")) {
+    payload.expiryDetails = value.expiryDetails;
+  }
+
+  if (Object.keys(payload).length === 1) {
+    throw new HttpError(
+      400,
+      "CAPABILITY_INPUT_INVALID",
+      "At least one organization-member field must be supplied."
+    );
+  }
+
+  return payload;
+}
+
+export async function proxyXOAuthOrganizationMemberUpdate(
+  context: CapabilityContext,
+  input: unknown
+): Promise<unknown> {
+  const payload = parseOrganizationMemberUpdateInput(input);
+  const url = new URL(
+    `${context.xoAuthFunctionsBaseUrl.replace(/\/+$/, "")}/xo-organization-members`
+  );
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${context.identity.accessToken}`,
+        "X-Request-Id": context.traceId
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await response.text();
+    let body: any = null;
+
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new HttpError(
+          502,
+          "XO_AUTH_RESPONSE_INVALID",
+          "XO Auth returned an invalid response."
+        );
+      }
+    }
+
+    if (!response.ok) {
+      const code =
+        typeof body?.error === "string"
+          ? body.error
+          : `XO_AUTH_HTTP_${response.status}`;
+
+      const message =
+        typeof body?.error_description === "string"
+          ? body.error_description
+          : `XO Auth request failed (${response.status}).`;
+
+      throw new HttpError(response.status, code, message);
+    }
+
+    return body;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new HttpError(
+        504,
+        "XO_AUTH_TIMEOUT",
+        "XO Auth request timed out."
+      );
+    }
+
+    throw new HttpError(
+      502,
+      "XO_AUTH_UNAVAILABLE",
+      "XO Auth resource API is unavailable."
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
