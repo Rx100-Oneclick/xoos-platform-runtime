@@ -8,6 +8,14 @@ export interface XOIdentity {
   role: string | null;
   scopes: string[];
   claims: JWTPayload;
+
+  /**
+   * Server-side only. Used by trusted BFF capability handlers when they
+   * must call an XO Auth protected API on behalf of the current user.
+   * Never expose this value in Runtime context, feed, telemetry, or the
+   * Microapp bridge.
+   */
+  accessToken: string;
 }
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -17,6 +25,8 @@ export async function authenticateRequest(request: Request, config: RuntimeBffCo
   if (!header.startsWith("Bearer ")) throw new HttpError(401, "AUTH_TOKEN_MISSING", "Bearer token is required.");
 
   const token = header.slice(7).trim();
+  if (!token) throw new HttpError(401, "AUTH_TOKEN_MISSING", "Bearer token is required.");
+
   const jwks = jwksCache.get(config.jwksUrl) ?? createRemoteJWKSet(new URL(config.jwksUrl));
   jwksCache.set(config.jwksUrl, jwks);
 
@@ -35,7 +45,8 @@ export async function authenticateRequest(request: Request, config: RuntimeBffCo
       tokenClientId: typeof payload.client_id === "string" ? payload.client_id : null,
       role: typeof payload.role === "string" ? payload.role : null,
       scopes: rawScopes,
-      claims: payload
+      claims: payload,
+      accessToken: token
     };
   } catch (error) {
     if (error instanceof HttpError) throw error;
