@@ -30,6 +30,7 @@ const config: RuntimeBffConfig = {
   jwksUrl: required("XO_AUTH_JWKS_URL"),
   issuer: required("XO_AUTH_ISSUER"),
   audience: Deno.env.get("XO_AUTH_AUDIENCE")?.trim() || "xo-api",
+  xoAuthFunctionsBaseUrl: required("XO_AUTH_FUNCTIONS_BASE_URL").replace(/\/+$/, ""),
   supabaseUrl: required("SUPABASE_URL"),
   supabaseSecretKey: getDefaultSupabaseSecretKey(),
   runtimeVersion: Deno.env.get("XOOS_RUNTIME_VERSION")?.trim() || "0.1.0",
