@@ -2,6 +2,7 @@ export interface RuntimeBffConfig {
   jwksUrl: string;
   issuer: string;
   audience: string;
+  xoAuthFunctionsBaseUrl: string;
   supabaseUrl: string;
   supabaseSecretKey: string;
   runtimeVersion: string;
@@ -23,6 +24,7 @@ export function loadConfig(): RuntimeBffConfig {
     jwksUrl: required("XO_AUTH_JWKS_URL"),
     issuer: required("XO_AUTH_ISSUER"),
     audience: process.env.XO_AUTH_AUDIENCE?.trim() || "xo-api",
+    xoAuthFunctionsBaseUrl: required("XO_AUTH_FUNCTIONS_BASE_URL").replace(/\/+$/, ""),
     supabaseUrl: required("SUPABASE_URL"),
     supabaseSecretKey: required("SUPABASE_SECRET_KEY"),
     runtimeVersion: process.env.XOOS_RUNTIME_VERSION?.trim() || "0.1.0",
