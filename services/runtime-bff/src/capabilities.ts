@@ -1,7 +1,7 @@
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
-import { proxyXOAuthList } from "./xo-auth-capabilities";
+import { proxyXOAuthList, proxyXOAuthOrganizationMemberUpdate } from "./xo-auth-capabilities";
 
 export interface CapabilityContext {
   identity: XOIdentity;
@@ -29,6 +29,11 @@ handlers.set(
 handlers.set(
   "xo-auth.organization-members.list",
   (context, input) => proxyXOAuthList(context, "xo-organization-members", input)
+);
+
+handlers.set(
+  "xo-auth.organization-members.update",
+  (context, input) => proxyXOAuthOrganizationMemberUpdate(context, input)
 );
 
 export function registerCapability(name: string, handler: Handler): void {

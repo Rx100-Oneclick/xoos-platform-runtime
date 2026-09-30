@@ -25,6 +25,8 @@ export interface XOOrganizationMember {
   setupComplete: boolean;
   assignedOn: string | null;
   avatarUrl: string | null;
+  activationDetails: string | null;
+  expiryDetails: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
