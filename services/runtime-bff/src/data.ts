@@ -47,6 +47,44 @@ export async function issueDataAccessSession(
     throw new HttpError(403, "DATA_SOURCE_NOT_ENTITLED", `Client is not entitled to data source '${key}'.`);
   }
 
+  // Only the auth-core datasource reuses the already-verified XO RS256 access token.
+  // The source must resolve to the same Supabase project as XO Auth's JWKS.
+  // Existing xoos-core and all other datasource signing behavior remains unchanged.
+  if (key === "auth-core") {
+    let sourceOrigin: string;
+    let xoAuthOrigin: string;
+    try {
+      sourceOrigin = new URL(source.supabase_url).origin;
+      xoAuthOrigin = new URL(config.jwksUrl).origin;
+    } catch {
+      throw new HttpError(500, "AUTH_CORE_SOURCE_INVALID", "auth-core datasource configuration is invalid.");
+    }
+
+    if (sourceOrigin !== xoAuthOrigin) {
+      throw new HttpError(500, "AUTH_CORE_SOURCE_MISMATCH", "auth-core datasource does not match the trusted XO Auth project.");
+    }
+
+    if (identity.role !== "authenticated" || identity.claims.token_use !== "access_token") {
+      throw new HttpError(403, "AUTH_CORE_USER_TOKEN_REQUIRED", "An authenticated XO user access token is required.");
+    }
+
+    const expiresAtSeconds = identity.claims.exp;
+    if (typeof expiresAtSeconds !== "number" || expiresAtSeconds <= Math.floor(Date.now() / 1000) + 30) {
+      throw new HttpError(401, "AUTH_TOKEN_EXPIRED", "A valid XO Auth access token is required.");
+    }
+
+    return {
+      accessToken: identity.accessToken,
+      expiresAt: expiresAtSeconds * 1000,
+      dataSource: {
+        projectKey: source.project_key,
+        provider: "supabase",
+        supabaseUrl: source.supabase_url,
+        publishableKey: source.publishable_key
+      }
+    };
+  }
+
   const ttlSeconds = normalizeTtl(config.dataJwtTtlSeconds);
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expiresAtSeconds = nowSeconds + ttlSeconds;
