@@ -52,4 +52,10 @@ export interface XOOrganizationMembersResponse {
 export interface XOListOptions {
   limit?: number;
   offset?: number;
+  /**
+   * Application access view. Omit (or use "owned") for applications owned by
+   * the current tenant. Use "consumer" for active CONSUMER application access
+   * granted to the current tenant through XO Auth.
+   */
+  access?: "owned" | "consumer";
 }

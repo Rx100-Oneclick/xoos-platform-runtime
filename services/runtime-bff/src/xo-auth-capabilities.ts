@@ -1,9 +1,18 @@
 import { HttpError } from "./auth";
 import type { CapabilityContext } from "./capabilities";
 
+type XOApplicationAccess = "owned" | "consumer";
+
 interface XOListInput {
   limit?: number;
   offset?: number;
+  access?: XOApplicationAccess;
+}
+
+interface ParsedXOListInput {
+  limit: number;
+  offset: number;
+  access?: XOApplicationAccess;
 }
 
 function normalizeInteger(
@@ -24,7 +33,29 @@ function normalizeInteger(
   return parsed;
 }
 
-function parseListInput(input: unknown): Required<XOListInput> {
+function normalizeApplicationAccess(value: unknown): XOApplicationAccess | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") {
+    throw new HttpError(
+      400,
+      "CAPABILITY_INPUT_INVALID",
+      "Application access filter must be 'owned' or 'consumer'."
+    );
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "owned" || normalized === "consumer") {
+    return normalized;
+  }
+
+  throw new HttpError(
+    400,
+    "CAPABILITY_INPUT_INVALID",
+    "Application access filter must be 'owned' or 'consumer'."
+  );
+}
+
+function parseListInput(input: unknown): ParsedXOListInput {
   if (input === undefined || input === null) {
     return { limit: 50, offset: 0 };
   }
@@ -40,7 +71,8 @@ function parseListInput(input: unknown): Required<XOListInput> {
   const value = input as Record<string, unknown>;
   return {
     limit: normalizeInteger(value.limit, 50, 1, 100),
-    offset: normalizeInteger(value.offset, 0, 0, 100000)
+    offset: normalizeInteger(value.offset, 0, 0, 100000),
+    access: normalizeApplicationAccess(value.access)
   };
 }
 
@@ -49,12 +81,19 @@ export async function proxyXOAuthList(
   functionName: "xo-applications" | "xo-organization-members",
   input: unknown
 ): Promise<unknown> {
-  const { limit, offset } = parseListInput(input);
+  const { limit, offset, access } = parseListInput(input);
   const url = new URL(
     `${context.xoAuthFunctionsBaseUrl.replace(/\/+$/, "")}/${functionName}`
   );
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
+
+  // Only the applications resource supports access-mode filtering. Keeping this
+  // explicit prevents unrelated XO Auth list capabilities from receiving an
+  // unsupported query parameter.
+  if (functionName === "xo-applications" && access) {
+    url.searchParams.set("access", access);
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
@@ -120,7 +159,6 @@ export async function proxyXOAuthList(
     clearTimeout(timeout);
   }
 }
-
 
 interface XOOrganizationMemberUpdateInput {
   memberId?: unknown;
