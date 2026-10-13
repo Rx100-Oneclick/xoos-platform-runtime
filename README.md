@@ -62,7 +62,9 @@ Microapp
 The Runtime BFF provides these built-in capabilities:
 
 - `xo-auth.applications.list` -> `xo-applications`
+- `xo-auth.organizations.get-current` -> `xo-organizations`
 - `xo-auth.organization-members.list` -> `xo-organization-members`
+- `xo-auth.organization-members.update` -> `xo-organization-members`
 
 The BFF forwards the already verified current-user XO bearer token server-to-server. It never exposes that token through Runtime context or the Microapp bridge.
 
@@ -84,7 +86,9 @@ const { applications } = await xoAuth.applications.list({
   offset: 0
 });
 
+const { organization } = await xoAuth.organizations.getCurrent();
+
 const { members } = await xoAuth.organizationMembers.list();
 ```
 
-`@xoos/microapp-adapter@0.2.0` adds `useXOAuth`, `XOAuthClient`, and the typed XO Auth resource DTOs.
+`@xoos/microapp-adapter@0.2.2` exposes `useXOAuth`, `XOAuthClient`, and typed XO Auth DTOs for applications, the current organization, and organization members.
