@@ -3,7 +3,7 @@ import type {
   XOApplicationsResponse,
   XOListOptions,
   XOOrganizationMembersResponse,
-  XOOrganizationResponse
+  XOOrganizationsResponse
 } from "./types";
 
 export class XOAuthClient {
@@ -18,9 +18,9 @@ export class XOAuthClient {
   };
 
   readonly organizations = {
-    getCurrent: async (): Promise<XOOrganizationResponse> =>
-      this.bridge.services.request<XOOrganizationResponse>(
-        "xo-auth.organizations.get-current"
+    list: async (): Promise<XOOrganizationsResponse> =>
+      this.bridge.services.request<XOOrganizationsResponse>(
+        "xo-auth.organizations.list"
       )
   };
 

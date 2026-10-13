@@ -2,8 +2,8 @@ import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
 import {
-  proxyXOAuthCurrentOrganization,
   proxyXOAuthList,
+  proxyXOAuthOrganizationsList,
   proxyXOAuthOrganizationMemberUpdate
 } from "./xo-auth-capabilities";
 
@@ -31,8 +31,8 @@ handlers.set(
 );
 
 handlers.set(
-  "xo-auth.organizations.get-current",
-  (context) => proxyXOAuthCurrentOrganization(context)
+  "xo-auth.organizations.list",
+  (context) => proxyXOAuthOrganizationsList(context)
 );
 
 handlers.set(
