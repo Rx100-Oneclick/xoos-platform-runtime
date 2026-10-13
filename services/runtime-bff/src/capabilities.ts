@@ -1,7 +1,11 @@
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
-import { proxyXOAuthList, proxyXOAuthOrganizationMemberUpdate } from "./xo-auth-capabilities";
+import {
+  proxyXOAuthCurrentOrganization,
+  proxyXOAuthList,
+  proxyXOAuthOrganizationMemberUpdate
+} from "./xo-auth-capabilities";
 
 export interface CapabilityContext {
   identity: XOIdentity;
@@ -24,6 +28,11 @@ handlers.set("runtime.health", async (context) => ({
 handlers.set(
   "xo-auth.applications.list",
   (context, input) => proxyXOAuthList(context, "xo-applications", input)
+);
+
+handlers.set(
+  "xo-auth.organizations.get-current",
+  (context) => proxyXOAuthCurrentOrganization(context)
 );
 
 handlers.set(
