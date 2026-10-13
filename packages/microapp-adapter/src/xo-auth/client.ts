@@ -2,7 +2,8 @@ import type { XOOSMicroappBridge } from "@xoos/contracts";
 import type {
   XOApplicationsResponse,
   XOListOptions,
-  XOOrganizationMembersResponse
+  XOOrganizationMembersResponse,
+  XOOrganizationResponse
 } from "./types";
 
 export class XOAuthClient {
@@ -13,6 +14,13 @@ export class XOAuthClient {
       this.bridge.services.request<XOApplicationsResponse>(
         "xo-auth.applications.list",
         options
+      )
+  };
+
+  readonly organizations = {
+    getCurrent: async (): Promise<XOOrganizationResponse> =>
+      this.bridge.services.request<XOOrganizationResponse>(
+        "xo-auth.organizations.get-current"
       )
   };
 
