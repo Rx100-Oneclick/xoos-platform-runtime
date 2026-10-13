@@ -12,9 +12,11 @@ export { useXOAuth } from "./hooks/useXOAuth";
 export { XOAuthClient } from "./xo-auth";
 export type {
   XOApplication,
+  XOOrganization,
   XOOrganizationMember,
   XOPagination,
   XOApplicationsResponse,
+  XOOrganizationResponse,
   XOOrganizationMembersResponse,
   XOListOptions
 } from "./xo-auth";
