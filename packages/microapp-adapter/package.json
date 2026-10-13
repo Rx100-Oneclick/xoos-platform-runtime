@@ -23,7 +23,7 @@
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
-    "@xoos/contracts": "workspace:*"
+    "@xoos/contracts": "0.1.2"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",

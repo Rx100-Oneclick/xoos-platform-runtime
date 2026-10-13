@@ -14,6 +14,17 @@ export interface XOApplication {
   updatedAt: string;
 }
 
+export interface XOOrganization {
+  id: string;
+  name: string;
+  type: string | null;
+  domain: string | null;
+  logo: string | null;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface XOOrganizationMember {
   memberId: string;
   userId: string | null;
@@ -41,6 +52,11 @@ export interface XOApplicationsResponse {
   tenantId: string;
   applications: XOApplication[];
   pagination: XOPagination;
+}
+
+export interface XOOrganizationResponse {
+  tenantId: string;
+  organization: XOOrganization;
 }
 
 export interface XOOrganizationMembersResponse {

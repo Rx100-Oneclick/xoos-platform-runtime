@@ -76,23 +76,21 @@ function parseListInput(input: unknown): ParsedXOListInput {
   };
 }
 
-export async function proxyXOAuthList(
+async function requestXOAuth(
   context: CapabilityContext,
-  functionName: "xo-applications" | "xo-organization-members",
-  input: unknown
+  functionName: "xo-applications" | "xo-organizations" | "xo-organization-members",
+  options: {
+    method?: "GET" | "PATCH";
+    query?: URLSearchParams;
+    body?: Record<string, unknown>;
+  } = {}
 ): Promise<unknown> {
-  const { limit, offset, access } = parseListInput(input);
   const url = new URL(
     `${context.xoAuthFunctionsBaseUrl.replace(/\/+$/, "")}/${functionName}`
   );
-  url.searchParams.set("limit", String(limit));
-  url.searchParams.set("offset", String(offset));
 
-  // Only the applications resource supports access-mode filtering. Keeping this
-  // explicit prevents unrelated XO Auth list capabilities from receiving an
-  // unsupported query parameter.
-  if (functionName === "xo-applications" && access) {
-    url.searchParams.set("access", access);
+  if (options.query) {
+    options.query.forEach((value, key) => url.searchParams.set(key, value));
   }
 
   const controller = new AbortController();
@@ -100,13 +98,15 @@ export async function proxyXOAuthList(
 
   try {
     const response = await fetch(url, {
-      method: "GET",
+      method: options.method ?? "GET",
       signal: controller.signal,
       headers: {
         Accept: "application/json",
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
         Authorization: `Bearer ${context.identity.accessToken}`,
         "X-Request-Id": context.traceId
-      }
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {})
     });
 
     const text = await response.text();
@@ -158,6 +158,29 @@ export async function proxyXOAuthList(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function proxyXOAuthList(
+  context: CapabilityContext,
+  functionName: "xo-applications" | "xo-organization-members",
+  input: unknown
+): Promise<unknown> {
+  const { limit, offset, access } = parseListInput(input);
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  query.set("offset", String(offset));
+
+  if (functionName === "xo-applications" && access) {
+    query.set("access", access);
+  }
+
+  return requestXOAuth(context, functionName, { query });
+}
+
+export async function proxyXOAuthCurrentOrganization(
+  context: CapabilityContext
+): Promise<unknown> {
+  return requestXOAuth(context, "xo-organizations");
 }
 
 interface XOOrganizationMemberUpdateInput {
@@ -219,73 +242,8 @@ export async function proxyXOAuthOrganizationMemberUpdate(
   input: unknown
 ): Promise<unknown> {
   const payload = parseOrganizationMemberUpdateInput(input);
-  const url = new URL(
-    `${context.xoAuthFunctionsBaseUrl.replace(/\/+$/, "")}/xo-organization-members`
-  );
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-
-  try {
-    const response = await fetch(url, {
-      method: "PATCH",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${context.identity.accessToken}`,
-        "X-Request-Id": context.traceId
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const text = await response.text();
-    let body: any = null;
-
-    if (text) {
-      try {
-        body = JSON.parse(text);
-      } catch {
-        throw new HttpError(
-          502,
-          "XO_AUTH_RESPONSE_INVALID",
-          "XO Auth returned an invalid response."
-        );
-      }
-    }
-
-    if (!response.ok) {
-      const code =
-        typeof body?.error === "string"
-          ? body.error
-          : `XO_AUTH_HTTP_${response.status}`;
-
-      const message =
-        typeof body?.error_description === "string"
-          ? body.error_description
-          : `XO Auth request failed (${response.status}).`;
-
-      throw new HttpError(response.status, code, message);
-    }
-
-    return body;
-  } catch (error) {
-    if (error instanceof HttpError) throw error;
-
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new HttpError(
-        504,
-        "XO_AUTH_TIMEOUT",
-        "XO Auth request timed out."
-      );
-    }
-
-    throw new HttpError(
-      502,
-      "XO_AUTH_UNAVAILABLE",
-      "XO Auth resource API is unavailable."
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
+  return requestXOAuth(context, "xo-organization-members", {
+    method: "PATCH",
+    body: payload
+  });
 }
