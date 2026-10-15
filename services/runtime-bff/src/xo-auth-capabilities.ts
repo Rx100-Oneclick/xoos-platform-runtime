@@ -177,7 +177,7 @@ export async function proxyXOAuthList(
   return requestXOAuth(context, functionName, { query });
 }
 
-export async function proxyXOAuthCurrentOrganization(
+export async function proxyXOAuthOrganizationsList(
   context: CapabilityContext
 ): Promise<unknown> {
   return requestXOAuth(context, "xo-organizations");

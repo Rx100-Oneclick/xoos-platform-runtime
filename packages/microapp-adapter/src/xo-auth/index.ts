@@ -5,7 +5,7 @@ export type {
   XOOrganizationMember,
   XOPagination,
   XOApplicationsResponse,
-  XOOrganizationResponse,
+  XOOrganizationsResponse,
   XOOrganizationMembersResponse,
   XOListOptions
 } from "./types";

@@ -1,6 +1,10 @@
 {
   "name": "@xoos/microapp-adapter",
+<<<<<<< HEAD
   "version": "0.2.3",
+=======
+  "version": "0.2.4",
+>>>>>>> 0a0e965bc6124dbb191dea184b7ebb8b64706b92
   "description": "XOOS adapter for building React Microapps as native Web Components",
   "type": "module",
   "main": "./dist/index.js",

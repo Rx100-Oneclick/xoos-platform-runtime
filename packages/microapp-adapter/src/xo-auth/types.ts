@@ -54,9 +54,10 @@ export interface XOApplicationsResponse {
   pagination: XOPagination;
 }
 
-export interface XOOrganizationResponse {
+export interface XOOrganizationsResponse {
   tenantId: string;
-  organization: XOOrganization;
+  organizations: XOOrganization[];
+  total: number;
 }
 
 export interface XOOrganizationMembersResponse {

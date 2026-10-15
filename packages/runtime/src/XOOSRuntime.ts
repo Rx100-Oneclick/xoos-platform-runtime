@@ -1,6 +1,8 @@
 import type {
   XOOSCapabilityResponse,
+  XOOSFeedMicroapp,
   XOOSMicroappBridge,
+  XOOSMicroappManifest,
   XOOSNavigationOptions,
   XOOSRuntimeContext,
   XOOSRuntimeFeed,
@@ -21,7 +23,7 @@ import type {
 } from "./types/runtime";
 
 export class XOOSRuntime {
-  static readonly version = "1.0.1";
+  static readonly version = "1.1.0";
 
   private initialized = false;
   private context: XOOSRuntimeContext | null = null;
@@ -67,13 +69,16 @@ export class XOOSRuntime {
   async mount(microappKey: string, options: XOOSMountOptions): Promise<XOOSMountedMicroapp> {
     this.ensureInitialized();
     if (!options.target) throw new XOOSRuntimeError("MOUNT_TARGET_INVALID", "A mount target is required.");
-    const feedEntry = this.feed!.microapps.find((item) => item.microappKey === microappKey);
-    if (!feedEntry) throw new XOOSRuntimeError("MICROAPP_NOT_ENTITLED", `Microapp '${microappKey}' is not in this client feed.`);
-    if (feedEntry.deliveryType !== "native_esm") throw new XOOSRuntimeError("DELIVERY_TYPE_UNSUPPORTED", `Runtime V1 supports native_esm only: ${microappKey}`);
-    const manifest = await this.manifests.resolve(feedEntry.manifestUrl);
-    if (manifest.microappKey !== microappKey) throw new XOOSRuntimeError("MANIFEST_MISMATCH", "Feed and manifest Microapp keys do not match.");
-    await this.modules.load(manifest.entry);
-    if (!customElements.get(manifest.elementName)) throw new XOOSRuntimeError("ELEMENT_NOT_REGISTERED", `Custom element '${manifest.elementName}' was not registered.`);
+
+    const { manifest } = await this.loadMicroappRelease(microappKey);
+
+    if (!customElements.get(manifest.elementName)) {
+      throw new XOOSRuntimeError(
+        "ELEMENT_NOT_REGISTERED",
+        `Custom element '${manifest.elementName}' was not registered.`
+      );
+    }
+
     const element = document.createElement(manifest.elementName) as XOOSRuntimeElement;
     element.xoos = this.createBridge();
     element.xoosProps = options.props;
@@ -133,9 +138,135 @@ export class XOOSRuntime {
     for (const key of [...this.mounted.keys()]) await this.unmount(key);
     this.events.clear();
     this.data.clear();
+    this.manifests.clear();
+    this.modules.clear();
     this.context = null;
     this.feed = null;
     this.initialized = false;
+  }
+
+  private async loadMicroappRelease(
+    microappKey: string
+  ): Promise<{ feedEntry: XOOSFeedMicroapp; manifest: XOOSMicroappManifest }> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const feedEntry = this.findFeedEntry(microappKey);
+      this.validateFeedEntry(feedEntry);
+
+      try {
+        const manifest = await this.manifests.resolve(feedEntry.manifestUrl);
+        this.validateManifestAgainstFeed(feedEntry, manifest);
+
+        await this.modules.load(
+          feedEntry.entryUrl,
+          feedEntry.integrity,
+          `${feedEntry.microappKey}@${feedEntry.version}@${feedEntry.integrity}`
+        );
+
+        return { feedEntry, manifest };
+      } catch (error) {
+        if (
+          attempt === 0 &&
+          error instanceof XOOSRuntimeError &&
+          error.code === "MICROAPP_SIGNED_URL_EXPIRED"
+        ) {
+          await this.refreshFeed();
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new XOOSRuntimeError(
+      "MICROAPP_SIGNED_URL_EXPIRED",
+      "Microapp artifact access URL could not be refreshed."
+    );
+  }
+
+  private findFeedEntry(microappKey: string): XOOSFeedMicroapp {
+    const feedEntry = this.feed!.microapps.find((item) => item.microappKey === microappKey);
+    if (!feedEntry) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_NOT_ENTITLED",
+        `Microapp '${microappKey}' is not in this client feed.`
+      );
+    }
+    return feedEntry;
+  }
+
+  private validateFeedEntry(feedEntry: XOOSFeedMicroapp): void {
+    if (feedEntry.deliveryType !== "native_esm") {
+      throw new XOOSRuntimeError(
+        "DELIVERY_TYPE_UNSUPPORTED",
+        `Runtime V1 supports native_esm only: ${feedEntry.microappKey}`
+      );
+    }
+    if (!feedEntry.elementName) {
+      throw new XOOSRuntimeError(
+        "MANIFEST_ELEMENT_MISMATCH",
+        `Native ESM Microapp '${feedEntry.microappKey}' does not declare an element name.`
+      );
+    }
+    if (!feedEntry.entryUrl) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_DOWNLOAD_FAILED",
+        `Microapp '${feedEntry.microappKey}' does not have an artifact access URL.`
+      );
+    }
+    if (!feedEntry.integrity) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_INTEGRITY_MISSING",
+        `Microapp '${feedEntry.microappKey}' does not have a trusted integrity digest.`
+      );
+    }
+    if (!/^sha256:[0-9a-f]{64}$/i.test(feedEntry.integrity)) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_INTEGRITY_INVALID",
+        `Microapp '${feedEntry.microappKey}' has an invalid integrity digest.`
+      );
+    }
+  }
+
+  private validateManifestAgainstFeed(
+    feedEntry: XOOSFeedMicroapp,
+    manifest: XOOSMicroappManifest
+  ): void {
+    if (manifest.microappKey !== feedEntry.microappKey) {
+      throw new XOOSRuntimeError("MANIFEST_MISMATCH", "Feed and manifest Microapp keys do not match.");
+    }
+    if (manifest.version !== feedEntry.version) {
+      throw new XOOSRuntimeError(
+        "MANIFEST_VERSION_MISMATCH",
+        "Feed and manifest versions do not match."
+      );
+    }
+    if (manifest.elementName !== feedEntry.elementName) {
+      throw new XOOSRuntimeError(
+        "MANIFEST_ELEMENT_MISMATCH",
+        "Feed and manifest element names do not match."
+      );
+    }
+    if (manifest.deliveryType && manifest.deliveryType !== feedEntry.deliveryType) {
+      throw new XOOSRuntimeError(
+        "MANIFEST_DELIVERY_TYPE_MISMATCH",
+        "Feed and manifest delivery types do not match."
+      );
+    }
+
+    if (manifest.integrity) {
+      const expected = feedEntry.integrity.replace(/^sha256:/i, "").toLowerCase();
+      const manifestHash = manifest.integrity.value.toLowerCase();
+      if (manifestHash !== expected) {
+        throw new XOOSRuntimeError(
+          "MANIFEST_INTEGRITY_MISMATCH",
+          "Manifest integrity does not match the trusted deployment integrity."
+        );
+      }
+    }
+  }
+
+  private async refreshFeed(): Promise<void> {
+    this.feed = await this.http.get<XOOSRuntimeFeed>("/v1/runtime/feed");
+    this.manifests.clear();
   }
 
   private createBridge(): XOOSMicroappBridge {
