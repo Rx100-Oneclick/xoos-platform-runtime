@@ -4,6 +4,7 @@ import type {
 } from "@xoos/contracts";
 import { describe, expect, it } from "vitest";
 import { XOOSRuntime } from "./XOOSRuntime";
+import { XOOSRuntimeError } from "./errors/XOOSRuntimeError";
 
 const HASH = `sha256:${"a".repeat(64)}`;
 
@@ -44,6 +45,18 @@ function validator(): ArtifactValidator {
   return runtime as unknown as ArtifactValidator;
 }
 
+function expectRuntimeErrorCode(action: () => void, expectedCode: string): void {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(XOOSRuntimeError);
+    expect((error as XOOSRuntimeError).code).toBe(expectedCode);
+    return;
+  }
+
+  throw new Error(`Expected XOOSRuntimeError '${expectedCode}'.`);
+}
+
 describe("XOOSRuntime artifact access validation", () => {
   it("accepts matching artifact access metadata", () => {
     expect(() =>
@@ -52,41 +65,35 @@ describe("XOOSRuntime artifact access validation", () => {
   });
 
   it("rejects a Microapp key mismatch", () => {
-    expect(() =>
-      validator().validateArtifactAccess(feedEntry, {
-        ...artifactAccess,
-        microappKey: "different-app"
-      })
-    ).toThrowError(
-      expect.objectContaining({
-        code: "MICROAPP_ARTIFACT_MISMATCH"
-      })
+    expectRuntimeErrorCode(
+      () =>
+        validator().validateArtifactAccess(feedEntry, {
+          ...artifactAccess,
+          microappKey: "different-app"
+        }),
+      "MICROAPP_ARTIFACT_MISMATCH"
     );
   });
 
   it("rejects a deployment version mismatch", () => {
-    expect(() =>
-      validator().validateArtifactAccess(feedEntry, {
-        ...artifactAccess,
-        version: "9.9.9"
-      })
-    ).toThrowError(
-      expect.objectContaining({
-        code: "MICROAPP_ARTIFACT_VERSION_MISMATCH"
-      })
+    expectRuntimeErrorCode(
+      () =>
+        validator().validateArtifactAccess(feedEntry, {
+          ...artifactAccess,
+          version: "9.9.9"
+        }),
+      "MICROAPP_ARTIFACT_VERSION_MISMATCH"
     );
   });
 
   it("rejects an integrity mismatch", () => {
-    expect(() =>
-      validator().validateArtifactAccess(feedEntry, {
-        ...artifactAccess,
-        integrity: `sha256:${"b".repeat(64)}`
-      })
-    ).toThrowError(
-      expect.objectContaining({
-        code: "MICROAPP_ARTIFACT_INTEGRITY_MISMATCH"
-      })
+    expectRuntimeErrorCode(
+      () =>
+        validator().validateArtifactAccess(feedEntry, {
+          ...artifactAccess,
+          integrity: `sha256:${"b".repeat(64)}`
+        }),
+      "MICROAPP_ARTIFACT_INTEGRITY_MISMATCH"
     );
   });
 });
