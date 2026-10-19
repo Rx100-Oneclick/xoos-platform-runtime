@@ -7,6 +7,7 @@ export interface RuntimeBffConfig {
   supabaseSecretKey: string;
   runtimeVersion: string;
   minimumRuntimeVersion: string;
+  microappSignedUrlTtlSeconds: number;
   dataJwtPrivateJwk?: string;
   dataJwtIssuer?: string;
   dataJwtAudience?: string;
@@ -19,6 +20,17 @@ function required(name: string): string {
   return value;
 }
 
+function boundedInteger(
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number
+): number {
+  const parsed = value ? Number.parseInt(value, 10) : fallback;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.floor(parsed), minimum), maximum);
+}
+
 export function loadConfig(): RuntimeBffConfig {
   return {
     jwksUrl: required("XO_AUTH_JWKS_URL"),
@@ -27,8 +39,14 @@ export function loadConfig(): RuntimeBffConfig {
     xoAuthFunctionsBaseUrl: required("XO_AUTH_FUNCTIONS_BASE_URL").replace(/\/+$/, ""),
     supabaseUrl: required("SUPABASE_URL"),
     supabaseSecretKey: required("SUPABASE_SECRET_KEY"),
-    runtimeVersion: process.env.XOOS_RUNTIME_VERSION?.trim() || "0.1.0",
-    minimumRuntimeVersion: process.env.XOOS_MINIMUM_RUNTIME_VERSION?.trim() || "0.1.0",
+    runtimeVersion: process.env.XOOS_RUNTIME_VERSION?.trim() || "1.2.0",
+    minimumRuntimeVersion: process.env.XOOS_MINIMUM_RUNTIME_VERSION?.trim() || "1.0.0",
+    microappSignedUrlTtlSeconds: boundedInteger(
+      process.env.XOOS_MICROAPP_SIGNED_URL_TTL_SECONDS,
+      300,
+      30,
+      300
+    ),
     dataJwtPrivateJwk: process.env.XOOS_DATA_JWT_PRIVATE_JWK?.trim(),
     dataJwtIssuer: process.env.XOOS_DATA_JWT_ISSUER?.trim() || "xoos-data",
     dataJwtAudience: process.env.XOOS_DATA_JWT_AUDIENCE?.trim() || "authenticated",

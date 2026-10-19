@@ -1,6 +1,7 @@
 import type {
   XOOSCapabilityResponse,
   XOOSFeedMicroapp,
+  XOOSMicroappArtifactAccess,
   XOOSMicroappBridge,
   XOOSMicroappManifest,
   XOOSNavigationOptions,
@@ -23,12 +24,13 @@ import type {
 } from "./types/runtime";
 
 export class XOOSRuntime {
-  static readonly version = "1.1.0";
+  static readonly version = "1.2.0";
 
   private initialized = false;
   private context: XOOSRuntimeContext | null = null;
   private feed: XOOSRuntimeFeed | null = null;
   private readonly mounted = new Map<string, HTMLElement>();
+  private readonly loadedReleases = new Map<string, XOOSMicroappManifest>();
   private readonly auth: AuthManager;
   private readonly http: HttpClient;
   private readonly data: DataTokenManager;
@@ -46,9 +48,15 @@ export class XOOSRuntime {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+
     try {
-      this.context = await this.http.get<XOOSRuntimeContext>("/v1/runtime/context");
-      this.feed = await this.http.get<XOOSRuntimeFeed>("/v1/runtime/feed");
+      const [context, feed] = await Promise.all([
+        this.http.get<XOOSRuntimeContext>("/v1/runtime/context"),
+        this.http.get<XOOSRuntimeFeed>("/v1/runtime/feed")
+      ]);
+
+      this.context = context;
+      this.feed = feed;
       this.initialized = true;
     } catch (error) {
       this.report(error);
@@ -119,14 +127,34 @@ export class XOOSRuntime {
 
   async requestCapability<T>(capability: string, input: unknown = {}, microappKey?: string): Promise<T> {
     this.ensureInitialized();
-    const response = await this.http.post<XOOSCapabilityResponse<T>>(`/v1/capabilities/${encodeURIComponent(capability)}`, { input, microappKey });
-    if (!response.ok) throw new XOOSRuntimeError(response.error?.code ?? "CAPABILITY_FAILED", response.error?.message ?? `Capability '${capability}' failed.`);
+    const response = await this.http.post<XOOSCapabilityResponse<T>>(
+      `/v1/capabilities/${encodeURIComponent(capability)}`,
+      { input, microappKey }
+    );
+
+    if (!response.ok) {
+      throw new XOOSRuntimeError(
+        response.error?.code ?? "CAPABILITY_FAILED",
+        response.error?.message ?? `Capability '${capability}' failed.`
+      );
+    }
+
     return response.data as T;
   }
 
-  async trackTelemetry(event: string, attributes?: Record<string, string | number | boolean | null>, microappKey?: string): Promise<void> {
+  async trackTelemetry(
+    event: string,
+    attributes?: Record<string, string | number | boolean | null>,
+    microappKey?: string
+  ): Promise<void> {
     this.ensureInitialized();
-    const payload: XOOSTelemetryEvent = { event, microappKey, occurredAt: new Date().toISOString(), attributes };
+    const payload: XOOSTelemetryEvent = {
+      event,
+      microappKey,
+      occurredAt: new Date().toISOString(),
+      attributes
+    };
+
     try {
       await this.http.post<{ ok: boolean; traceId?: string }>("/v1/telemetry", payload);
     } catch (error) {
@@ -140,6 +168,7 @@ export class XOOSRuntime {
     this.data.clear();
     this.manifests.clear();
     this.modules.clear();
+    this.loadedReleases.clear();
     this.context = null;
     this.feed = null;
     this.initialized = false;
@@ -148,20 +177,34 @@ export class XOOSRuntime {
   private async loadMicroappRelease(
     microappKey: string
   ): Promise<{ feedEntry: XOOSFeedMicroapp; manifest: XOOSMicroappManifest }> {
+    const feedEntry = this.findFeedEntry(microappKey);
+    this.validateFeedEntry(feedEntry);
+
+    const releaseKey = this.releaseKey(feedEntry);
+    const cachedManifest = this.loadedReleases.get(releaseKey);
+    if (cachedManifest) {
+      return { feedEntry, manifest: cachedManifest };
+    }
+
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const feedEntry = this.findFeedEntry(microappKey);
-      this.validateFeedEntry(feedEntry);
+      const artifacts = await this.getArtifactAccess(microappKey);
+      this.validateArtifactAccess(feedEntry, artifacts);
 
       try {
-        const manifest = await this.manifests.resolve(feedEntry.manifestUrl);
+        const manifest = await this.manifests.resolve(
+          artifacts.manifestUrl,
+          releaseKey
+        );
+
         this.validateManifestAgainstFeed(feedEntry, manifest);
 
         await this.modules.load(
-          feedEntry.entryUrl,
-          feedEntry.integrity,
-          `${feedEntry.microappKey}@${feedEntry.version}@${feedEntry.integrity}`
+          artifacts.entryUrl,
+          artifacts.integrity,
+          `${feedEntry.microappKey}@${feedEntry.version}@${artifacts.integrity.toLowerCase()}`
         );
 
+        this.loadedReleases.set(releaseKey, manifest);
         return { feedEntry, manifest };
       } catch (error) {
         if (
@@ -169,16 +212,26 @@ export class XOOSRuntime {
           error instanceof XOOSRuntimeError &&
           error.code === "MICROAPP_SIGNED_URL_EXPIRED"
         ) {
-          await this.refreshFeed();
+          this.manifests.delete(releaseKey);
           continue;
         }
+
         throw error;
       }
     }
 
     throw new XOOSRuntimeError(
       "MICROAPP_SIGNED_URL_EXPIRED",
-      "Microapp artifact access URL could not be refreshed."
+      "Unable to obtain valid Microapp artifact access."
+    );
+  }
+
+  private async getArtifactAccess(
+    microappKey: string
+  ): Promise<XOOSMicroappArtifactAccess> {
+    return this.http.post<XOOSMicroappArtifactAccess>(
+      `/v1/runtime/microapps/${encodeURIComponent(microappKey)}/artifacts`,
+      {}
     );
   }
 
@@ -197,31 +250,78 @@ export class XOOSRuntime {
     if (feedEntry.deliveryType !== "native_esm") {
       throw new XOOSRuntimeError(
         "DELIVERY_TYPE_UNSUPPORTED",
-        `Runtime V1 supports native_esm only: ${feedEntry.microappKey}`
+        `Runtime supports native_esm only: ${feedEntry.microappKey}`
       );
     }
+
     if (!feedEntry.elementName) {
       throw new XOOSRuntimeError(
         "MANIFEST_ELEMENT_MISMATCH",
         `Native ESM Microapp '${feedEntry.microappKey}' does not declare an element name.`
       );
     }
-    if (!feedEntry.entryUrl) {
-      throw new XOOSRuntimeError(
-        "MICROAPP_DOWNLOAD_FAILED",
-        `Microapp '${feedEntry.microappKey}' does not have an artifact access URL.`
-      );
-    }
+
     if (!feedEntry.integrity) {
       throw new XOOSRuntimeError(
         "MICROAPP_INTEGRITY_MISSING",
         `Microapp '${feedEntry.microappKey}' does not have a trusted integrity digest.`
       );
     }
+
     if (!/^sha256:[0-9a-f]{64}$/i.test(feedEntry.integrity)) {
       throw new XOOSRuntimeError(
         "MICROAPP_INTEGRITY_INVALID",
         `Microapp '${feedEntry.microappKey}' has an invalid integrity digest.`
+      );
+    }
+  }
+
+  private validateArtifactAccess(
+    feedEntry: XOOSFeedMicroapp,
+    artifacts: XOOSMicroappArtifactAccess
+  ): void {
+    if (artifacts.microappKey !== feedEntry.microappKey) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ARTIFACT_MISMATCH",
+        "Artifact access Microapp key does not match the Runtime feed."
+      );
+    }
+
+    if (artifacts.version !== feedEntry.version) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ARTIFACT_VERSION_MISMATCH",
+        "Artifact access version does not match the Runtime feed."
+      );
+    }
+
+    if (!artifacts.manifestUrl || !artifacts.entryUrl) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ARTIFACT_ACCESS_INVALID",
+        "Microapp artifact access URLs are missing."
+      );
+    }
+
+    if (!/^sha256:[0-9a-f]{64}$/i.test(artifacts.integrity)) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_INTEGRITY_INVALID",
+        "Microapp artifact integrity is invalid."
+      );
+    }
+
+    if (artifacts.integrity.toLowerCase() !== feedEntry.integrity.toLowerCase()) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ARTIFACT_INTEGRITY_MISMATCH",
+        "Artifact integrity does not match the trusted Runtime feed."
+      );
+    }
+
+    if (
+      !Number.isFinite(artifacts.expiresIn) ||
+      artifacts.expiresIn <= 0
+    ) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ARTIFACT_ACCESS_INVALID",
+        "Microapp artifact access expiry is invalid."
       );
     }
   }
@@ -231,20 +331,26 @@ export class XOOSRuntime {
     manifest: XOOSMicroappManifest
   ): void {
     if (manifest.microappKey !== feedEntry.microappKey) {
-      throw new XOOSRuntimeError("MANIFEST_MISMATCH", "Feed and manifest Microapp keys do not match.");
+      throw new XOOSRuntimeError(
+        "MANIFEST_MISMATCH",
+        "Feed and manifest Microapp keys do not match."
+      );
     }
+
     if (manifest.version !== feedEntry.version) {
       throw new XOOSRuntimeError(
         "MANIFEST_VERSION_MISMATCH",
         "Feed and manifest versions do not match."
       );
     }
+
     if (manifest.elementName !== feedEntry.elementName) {
       throw new XOOSRuntimeError(
         "MANIFEST_ELEMENT_MISMATCH",
         "Feed and manifest element names do not match."
       );
     }
+
     if (manifest.deliveryType && manifest.deliveryType !== feedEntry.deliveryType) {
       throw new XOOSRuntimeError(
         "MANIFEST_DELIVERY_TYPE_MISMATCH",
@@ -255,6 +361,7 @@ export class XOOSRuntime {
     if (manifest.integrity) {
       const expected = feedEntry.integrity.replace(/^sha256:/i, "").toLowerCase();
       const manifestHash = manifest.integrity.value.toLowerCase();
+
       if (manifestHash !== expected) {
         throw new XOOSRuntimeError(
           "MANIFEST_INTEGRITY_MISMATCH",
@@ -264,9 +371,8 @@ export class XOOSRuntime {
     }
   }
 
-  private async refreshFeed(): Promise<void> {
-    this.feed = await this.http.get<XOOSRuntimeFeed>("/v1/runtime/feed");
-    this.manifests.clear();
+  private releaseKey(feedEntry: XOOSFeedMicroapp): string {
+    return `${feedEntry.microappKey}@${feedEntry.version}@${feedEntry.integrity.toLowerCase()}`;
   }
 
   private createBridge(): XOOSMicroappBridge {
@@ -281,14 +387,16 @@ export class XOOSRuntime {
         on: (event, handler) => this.events.on(event, handler)
       },
       services: {
-        request: <T>(capability: string, input?: unknown, microappKey?: string) => this.requestCapability<T>(capability, input, microappKey)
+        request: <T>(capability: string, input?: unknown, microappKey?: string) =>
+          this.requestCapability<T>(capability, input, microappKey)
       },
       data: {
         getAccessToken: (projectKey) => this.data.getAccessToken(projectKey),
         getProjectConfig: (projectKey) => this.data.getProjectConfig(projectKey)
       },
       telemetry: {
-        track: (event, attributes, microappKey) => this.trackTelemetry(event, attributes, microappKey)
+        track: (event, attributes, microappKey) =>
+          this.trackTelemetry(event, attributes, microappKey)
       }
     };
   }
@@ -309,7 +417,12 @@ export class XOOSRuntime {
   }
 
   private ensureInitialized(): void {
-    if (!this.initialized || !this.context || !this.feed) throw new XOOSRuntimeError("RUNTIME_NOT_INITIALIZED", "Call runtime.initialize() before using the Runtime.");
+    if (!this.initialized || !this.context || !this.feed) {
+      throw new XOOSRuntimeError(
+        "RUNTIME_NOT_INITIALIZED",
+        "Call runtime.initialize() before using the Runtime."
+      );
+    }
   }
 
   private report(error: unknown): void {

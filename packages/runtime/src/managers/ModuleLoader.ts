@@ -48,14 +48,6 @@ export class ModuleLoader {
         entryUrl,
         expectedHash
       ).catch((error: unknown) => {
-        /*
-         * Failed loads must not remain cached.
-         *
-         * This allows a retry after:
-         * - signed URL refresh
-         * - transient network failure
-         * - corrected deployment metadata
-         */
         this.cache.delete(stableKey);
 
         if (
@@ -90,20 +82,11 @@ export class ModuleLoader {
   ): Promise<unknown> {
     let response: Response;
 
-    /* =====================================================
-     * Step 1
-     * Download exact Microapp bytes
-     * =================================================== */
-
     try {
       response =
         await fetch(
           entryUrl,
           {
-            /*
-             * Signed artifact responses must not be reused
-             * from an intermediate browser cache.
-             */
             cache: "no-store"
           }
         );
@@ -115,12 +98,8 @@ export class ModuleLoader {
       );
     }
 
-    /* =====================================================
-     * Step 2
-     * Detect expired/invalid signed URL
-     * =================================================== */
-
     if (
+      response.status === 400 ||
       response.status === 401 ||
       response.status === 403
     ) {
@@ -137,11 +116,6 @@ export class ModuleLoader {
       );
     }
 
-    /* =====================================================
-     * Step 3
-     * Read EXACT downloaded bytes
-     * =================================================== */
-
     let bytes: ArrayBuffer;
 
     try {
@@ -154,11 +128,6 @@ export class ModuleLoader {
         error
       );
     }
-
-    /* =====================================================
-     * Step 4
-     * SHA-256 verification
-     * =================================================== */
 
     let actualHash: string;
 
@@ -183,16 +152,6 @@ export class ModuleLoader {
       );
     }
 
-    /* =====================================================
-     * Step 5
-     *
-     * Execute exactly the bytes that were verified.
-     *
-     * Do NOT import entryUrl directly after verification,
-     * because that would perform another network request and
-     * could execute different bytes.
-     * =================================================== */
-
     let verifiedModuleUrl: string;
 
     try {
@@ -215,10 +174,6 @@ export class ModuleLoader {
     }
 
     try {
-      /*
-       * @vite-ignore is required because the module URL
-       * is created dynamically at runtime.
-       */
       return await import(
         /* @vite-ignore */
         verifiedModuleUrl

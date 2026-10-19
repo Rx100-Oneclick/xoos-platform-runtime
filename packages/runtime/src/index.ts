@@ -10,6 +10,7 @@ export type {
   XOOSRuntimeContext,
   XOOSRuntimeFeed,
   XOOSFeedMicroapp,
+  XOOSMicroappArtifactAccess,
   XOOSMicroappManifest,
   XOOSCapabilityRequest,
   XOOSCapabilityResponse,

@@ -3,7 +3,11 @@ import { authenticateRequest, HttpError } from "./auth";
 import { executeCapability } from "./capabilities";
 import type { RuntimeBffConfig } from "./config";
 import { issueDataAccessSession } from "./data";
-import { buildRuntimeFeed, assertClientBinding } from "./feed";
+import {
+  assertClientBinding,
+  buildRuntimeFeed,
+  issueMicroappArtifactAccess
+} from "./feed";
 import { buildCorsHeaders, validateClientOrigin } from "./origin";
 import { createRegistryClient } from "./supabase";
 
@@ -90,6 +94,36 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
         return json(feed, 200, cors, traceId);
       }
 
+      if (
+        request.method === "POST" &&
+        path.startsWith("/v1/runtime/microapps/") &&
+        path.endsWith("/artifacts")
+      ) {
+        const prefix = "/v1/runtime/microapps/";
+        const suffix = "/artifacts";
+        const encodedKey = path.slice(prefix.length, -suffix.length);
+        const microappKey = decodeURIComponent(encodedKey).trim();
+
+        if (!microappKey) {
+          throw new HttpError(
+            400,
+            "MICROAPP_KEY_MISSING",
+            "Microapp key is required."
+          );
+        }
+
+        const artifacts = await issueMicroappArtifactAccess(
+          db,
+          config,
+          identity,
+          headerClientId,
+          clientRegistration.environment,
+          microappKey
+        );
+
+        return json(artifacts, 200, cors, traceId);
+      }
+
       if (request.method === "POST" && path === "/v1/data/token") {
         const body = await safeJson(request);
         const projectKey = typeof body.projectKey === "string" ? body.projectKey : "";
@@ -131,7 +165,12 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
         ? error
         : new HttpError(500, "INTERNAL_ERROR", "Runtime BFF request failed.");
       if (!(error instanceof HttpError)) console.error("runtime-bff error", { traceId, error });
-      return json({ error: { code: failure.code, message: failure.message }, traceId }, failure.status, cors, traceId);
+      return json(
+        { error: { code: failure.code, message: failure.message }, traceId },
+        failure.status,
+        cors,
+        traceId
+      );
     }
   };
 }
@@ -158,6 +197,8 @@ function json(body: unknown, status: number, cors: HeadersInit, traceId: string)
       ...cors,
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
       "X-XO-Trace-Id": traceId
     }
   });
@@ -169,6 +210,8 @@ function jsonWithoutCors(body: unknown, status: number, traceId: string): Respon
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
       "X-XO-Trace-Id": traceId
     }
   });
