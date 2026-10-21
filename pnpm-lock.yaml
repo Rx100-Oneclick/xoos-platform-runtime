@@ -52,8 +52,8 @@ importers:
   packages/microapp-adapter:
     dependencies:
       '@xoos/contracts':
-        specifier: 0.1.2
-        version: 0.1.2
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       '@types/react':
         specifier: ^19.0.0
