@@ -8,6 +8,7 @@ export type {
 } from "./types/runtime";
 export type {
   XOOSRuntimeContext,
+  XOOSRuntimeBootstrap,
   XOOSRuntimeFeed,
   XOOSFeedMicroapp,
   XOOSMicroappArtifactAccess,
@@ -15,6 +16,9 @@ export type {
   XOOSCapabilityRequest,
   XOOSCapabilityResponse,
   XOOSMicroappBridge,
+  XOOSPermissionsBridge,
+  XOOSAuthorizedMicroapp,
+  XOOSPermissionAction,
   XOOSMicroappElement,
   XOOSDataBridge,
   XOOSDataSourceConfig,
