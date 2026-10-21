@@ -55,6 +55,8 @@ export async function validateApplicationAccess(
       .select("member_id,status,archived")
       .eq("tenant_id", tenantId)
       .eq("user_id", identity.userId)
+      .eq("status", "active")
+      .or("archived.eq.false,archived.is.null")
       .limit(2)
   ]);
 
