@@ -1,5 +1,11 @@
 import type { XOOSRuntimeContext } from "@xoos/contracts";
 import { authenticateRequest, HttpError } from "./auth";
+import { AuthorizationSnapshotCache } from "./authorization-cache";
+import {
+  buildRuntimeBootstrap,
+  createRuntimeContext,
+  resolveRuntimeAuthorizationState
+} from "./bootstrap";
 import { executeCapability } from "./capabilities";
 import type { RuntimeBffConfig } from "./config";
 import { issueDataAccessSession } from "./data";
@@ -8,11 +14,23 @@ import {
   buildRuntimeFeed,
   issueMicroappArtifactAccess
 } from "./feed";
-import { buildCorsHeaders, validateClientOrigin } from "./origin";
-import { createRegistryClient } from "./supabase";
+import {
+  buildCorsHeaders,
+  validateClientOrigin,
+  type RuntimeClientRegistration
+} from "./origin";
+import {
+  createRegistryClient,
+  createServicesClient
+} from "./supabase";
+import { validateApplicationAccess } from "./application-access";
 
 export function createRuntimeBffHandler(config: RuntimeBffConfig) {
-  const db = createRegistryClient(config);
+  const xoAuthDb = createRegistryClient(config);
+  const servicesDb = createServicesClient(config);
+  const authorizationCache = new AuthorizationSnapshotCache(
+    config.authorizationSnapshotTtlSeconds
+  );
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -34,14 +52,16 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
       );
     }
 
-    let clientRegistration: { clientId: string; environment: string };
+    let clientRegistration: RuntimeClientRegistration;
     try {
-      clientRegistration = await validateClientOrigin(db, queryClientId, origin);
+      clientRegistration = await validateClientOrigin(xoAuthDb, queryClientId, origin);
     } catch (error) {
       const failure = error instanceof HttpError
         ? error
         : new HttpError(500, "ORIGIN_VALIDATION_FAILED", "Unable to validate client origin.");
-      if (!(error instanceof HttpError)) console.error("runtime origin validation failed", { traceId, error });
+      if (!(error instanceof HttpError)) {
+        console.error("runtime origin validation failed", { traceId, error });
+      }
       return jsonWithoutCors(
         { error: { code: failure.code, message: failure.message }, traceId },
         failure.status,
@@ -69,27 +89,56 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
 
       const identity = await authenticateRequest(request, config);
       assertClientBinding(identity, headerClientId);
-
       const path = normalizePath(url.pathname);
 
+      if (request.method === "GET" && path === "/v1/runtime/bootstrap") {
+        const bootstrap = await buildRuntimeBootstrap({
+          xoAuthDb,
+          servicesDb,
+          config,
+          identity,
+          clientRegistration,
+          authorizationCache
+        });
+        return json(bootstrap, 200, cors, traceId);
+      }
+
+      // Backward-compatible endpoints. New SDKs should use /v1/runtime/bootstrap
+      // so application access, authorization, and feed generation happen once.
       if (request.method === "GET" && path === "/v1/runtime/context") {
-        const body: XOOSRuntimeContext = {
-          user: { id: identity.userId },
-          tenant: { id: identity.tenantId },
-          client: { id: headerClientId },
-          runtime: { minimumVersion: config.minimumRuntimeVersion },
-          scopes: identity.scopes
-        };
+        const state = await resolveRuntimeAuthorizationState({
+          xoAuthDb,
+          servicesDb,
+          config,
+          identity,
+          clientRegistration,
+          authorizationCache
+        });
+        const body: XOOSRuntimeContext = createRuntimeContext(
+          identity,
+          clientRegistration,
+          state,
+          config
+        );
         return json(body, 200, cors, traceId);
       }
 
       if (request.method === "GET" && path === "/v1/runtime/feed") {
+        const state = await resolveRuntimeAuthorizationState({
+          xoAuthDb,
+          servicesDb,
+          config,
+          identity,
+          clientRegistration,
+          authorizationCache
+        });
         const feed = await buildRuntimeFeed(
-          db,
+          xoAuthDb,
           config,
           identity,
           headerClientId,
-          clientRegistration.environment
+          clientRegistration.environment,
+          state.authorization
         );
         return json(feed, 200, cors, traceId);
       }
@@ -112,23 +161,34 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
           );
         }
 
+        const state = await resolveRuntimeAuthorizationState({
+          xoAuthDb,
+          servicesDb,
+          config,
+          identity,
+          clientRegistration,
+          authorizationCache
+        });
+
         const artifacts = await issueMicroappArtifactAccess(
-          db,
+          xoAuthDb,
           config,
           identity,
           headerClientId,
           clientRegistration.environment,
-          microappKey
+          microappKey,
+          state.authorization
         );
 
         return json(artifacts, 200, cors, traceId);
       }
 
       if (request.method === "POST" && path === "/v1/data/token") {
+        await validateApplicationAccess(xoAuthDb, identity, clientRegistration);
         const body = await safeJson(request);
         const projectKey = typeof body.projectKey === "string" ? body.projectKey : "";
         const session = await issueDataAccessSession(
-          db,
+          xoAuthDb,
           config,
           identity,
           headerClientId,
@@ -139,6 +199,14 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
       }
 
       if (request.method === "POST" && path.startsWith("/v1/capabilities/")) {
+        const state = await resolveRuntimeAuthorizationState({
+          xoAuthDb,
+          servicesDb,
+          config,
+          identity,
+          clientRegistration,
+          authorizationCache
+        });
         const capability = decodeURIComponent(path.slice("/v1/capabilities/".length));
         const body = await safeJson(request);
         const result = await executeCapability(
@@ -146,8 +214,10 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
           {
             identity,
             clientId: headerClientId,
+            applicationId: state.access.applicationId,
             traceId,
             xoAuthFunctionsBaseUrl: config.xoAuthFunctionsBaseUrl,
+            authorization: state.authorization,
             microappKey: typeof body.microappKey === "string" ? body.microappKey : undefined
           },
           body.input
@@ -156,6 +226,7 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
       }
 
       if (request.method === "POST" && path === "/v1/telemetry") {
+        await validateApplicationAccess(xoAuthDb, identity, clientRegistration);
         return json({ ok: true, traceId }, 202, cors, traceId);
       }
 
@@ -164,7 +235,9 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
       const failure = error instanceof HttpError
         ? error
         : new HttpError(500, "INTERNAL_ERROR", "Runtime BFF request failed.");
-      if (!(error instanceof HttpError)) console.error("runtime-bff error", { traceId, error });
+      if (!(error instanceof HttpError)) {
+        console.error("runtime-bff error", { traceId, error });
+      }
       return json(
         { error: { code: failure.code, message: failure.message }, traceId },
         failure.status,

@@ -3,6 +3,7 @@ import { HttpError } from "./auth";
 
 export interface RuntimeClientRegistration {
   clientId: string;
+  applicationId: string;
   environment: string;
 }
 
@@ -13,7 +14,7 @@ export async function validateClientOrigin(
 ): Promise<RuntimeClientRegistration> {
   const { data: client, error: clientError } = await db
     .from("oauth_clients")
-    .select("client_id,status,environment")
+    .select("client_id,application_id,status,environment")
     .eq("client_id", clientId)
     .maybeSingle();
 
@@ -29,10 +30,24 @@ export async function validateClientOrigin(
     throw new HttpError(403, "CLIENT_NOT_ACTIVE", "XOOS client is not active.");
   }
 
+  if (typeof client.application_id !== "string" || !client.application_id.trim()) {
+    throw new HttpError(
+      500,
+      "CLIENT_APPLICATION_BINDING_MISSING",
+      "XOOS client is not bound to an application."
+    );
+  }
+
+  const registration: RuntimeClientRegistration = {
+    clientId: client.client_id,
+    applicationId: client.application_id,
+    environment: client.environment
+  };
+
   // Requests without an Origin header are non-browser/server-to-server requests.
   // They are still authenticated and client-bound later in the request pipeline.
   if (!origin) {
-    return { clientId: client.client_id, environment: client.environment };
+    return registration;
   }
 
   const { data: allowedOrigin, error: originError } = await db
@@ -61,7 +76,7 @@ export async function validateClientOrigin(
     );
   }
 
-  return { clientId: client.client_id, environment: client.environment };
+  return registration;
 }
 
 export function buildCorsHeaders(origin: string | null): HeadersInit {

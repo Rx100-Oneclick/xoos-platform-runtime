@@ -50,6 +50,8 @@ const config: RuntimeBffConfig = {
   xoAuthFunctionsBaseUrl: required("XO_AUTH_FUNCTIONS_BASE_URL").replace(/\/+$/, ""),
   supabaseUrl: required("SUPABASE_URL"),
   supabaseSecretKey: getDefaultSupabaseSecretKey(),
+  servicesUrl: required("SERVICES_URL"),
+  servicesSecretKey: required("SERVICES_SECRET_KEY"),
   runtimeVersion: Deno.env.get("XOOS_RUNTIME_VERSION")?.trim() || "1.2.0",
   minimumRuntimeVersion:
     Deno.env.get("XOOS_MINIMUM_RUNTIME_VERSION")?.trim() || "1.0.0",
@@ -58,6 +60,12 @@ const config: RuntimeBffConfig = {
     300,
     30,
     300
+  ),
+  authorizationSnapshotTtlSeconds: boundedInteger(
+    optional("XOOS_AUTHORIZATION_SNAPSHOT_TTL_SECONDS"),
+    45,
+    10,
+    120
   ),
   dataJwtPrivateJwk: optional("XOOS_DATA_JWT_PRIVATE_JWK"),
   dataJwtIssuer: optional("XOOS_DATA_JWT_ISSUER") || "xoos-data",
