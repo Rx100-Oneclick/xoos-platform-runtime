@@ -5,6 +5,7 @@ import type {
   XOOSMicroappBridge,
   XOOSMicroappManifest,
   XOOSNavigationOptions,
+  XOOSRuntimeBootstrap,
   XOOSRuntimeContext,
   XOOSRuntimeFeed,
   XOOSTelemetryEvent
@@ -50,13 +51,12 @@ export class XOOSRuntime {
     if (this.initialized) return;
 
     try {
-      const [context, feed] = await Promise.all([
-        this.http.get<XOOSRuntimeContext>("/v1/runtime/context"),
-        this.http.get<XOOSRuntimeFeed>("/v1/runtime/feed")
-      ]);
+      const bootstrap = await this.http.get<XOOSRuntimeBootstrap>(
+        "/v1/runtime/bootstrap"
+      );
 
-      this.context = context;
-      this.feed = feed;
+      this.context = bootstrap.context;
+      this.feed = bootstrap.feed;
       this.initialized = true;
     } catch (error) {
       this.report(error);
@@ -78,6 +78,9 @@ export class XOOSRuntime {
     this.ensureInitialized();
     if (!options.target) throw new XOOSRuntimeError("MOUNT_TARGET_INVALID", "A mount target is required.");
 
+    const feedEntry = this.findFeedEntry(microappKey);
+    this.requireMicroappReadAccess(feedEntry);
+
     const { manifest } = await this.loadMicroappRelease(microappKey);
 
     if (!customElements.get(manifest.elementName)) {
@@ -88,7 +91,7 @@ export class XOOSRuntime {
     }
 
     const element = document.createElement(manifest.elementName) as XOOSRuntimeElement;
-    element.xoos = this.createBridge();
+    element.xoos = this.createBridge(microappKey);
     element.xoosProps = options.props;
 
     this.clearMountedAtTarget(options.target);
@@ -375,9 +378,27 @@ export class XOOSRuntime {
     return `${feedEntry.microappKey}@${feedEntry.version}@${feedEntry.integrity.toLowerCase()}`;
   }
 
-  private createBridge(): XOOSMicroappBridge {
+  private createBridge(microappKey: string): XOOSMicroappBridge {
+    const feedEntry = this.findFeedEntry(microappKey);
+    const permissionSet = new Set(
+      feedEntry.permissions.map((permission) => permission.trim().toUpperCase())
+    );
+
     return {
       context: this.context!,
+      permissions: {
+        list: () => [...permissionSet],
+        can: (action) => permissionSet.has(action.trim().toUpperCase()),
+        require: (action) => {
+          const normalized = action.trim().toUpperCase();
+          if (!permissionSet.has(normalized)) {
+            throw new XOOSRuntimeError(
+              "PERMISSION_DENIED",
+              `Permission '${normalized}' is required for '${microappKey}'.`
+            );
+          }
+        }
+      },
       navigation: {
         navigate: (microappKey, targetOrOptions) =>
           this.navigate(microappKey, targetOrOptions)
@@ -387,7 +408,7 @@ export class XOOSRuntime {
         on: (event, handler) => this.events.on(event, handler)
       },
       services: {
-        request: <T>(capability: string, input?: unknown, microappKey?: string) =>
+        request: <T>(capability: string, input?: unknown) =>
           this.requestCapability<T>(capability, input, microappKey)
       },
       data: {
@@ -399,6 +420,19 @@ export class XOOSRuntime {
           this.trackTelemetry(event, attributes, microappKey)
       }
     };
+  }
+
+  private requireMicroappReadAccess(feedEntry: XOOSFeedMicroapp): void {
+    const canRead = feedEntry.permissions.some(
+      (permission) => permission.trim().toUpperCase() === "READ"
+    );
+
+    if (!canRead) {
+      throw new XOOSRuntimeError(
+        "MICROAPP_ACCESS_DENIED",
+        `READ permission is required for '${feedEntry.microappKey}'.`
+      );
+    }
   }
 
   private clearMountedAtTarget(target: HTMLElement): void {

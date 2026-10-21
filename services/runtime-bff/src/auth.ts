@@ -4,6 +4,7 @@ import type { RuntimeBffConfig } from "./config";
 export interface XOIdentity {
   userId: string;
   tenantId: string | null;
+  sessionId: string | null;
   tokenClientId: string | null;
   role: string | null;
   scopes: string[];
@@ -42,6 +43,7 @@ export async function authenticateRequest(request: Request, config: RuntimeBffCo
     return {
       userId: payload.sub,
       tenantId: typeof payload.tenant_id === "string" ? payload.tenant_id : null,
+      sessionId: typeof payload.sid === "string" ? payload.sid : null,
       tokenClientId: typeof payload.client_id === "string" ? payload.client_id : null,
       role: typeof payload.role === "string" ? payload.role : null,
       scopes: rawScopes,

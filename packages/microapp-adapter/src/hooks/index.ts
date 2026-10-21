@@ -1,5 +1,6 @@
 import { useXOOS } from "../context/XOOSContext";
-import type { XOOSPermissionHelpers } from "../types";
+
+export { useXOOSPermissions } from "./useXOOSPermissions";
 
 export function useXOOSContext() {
   return useXOOS().context;
@@ -19,16 +20,4 @@ export function useXOOSServices() {
 
 export function useXOOSTelemetry() {
   return useXOOS().telemetry;
-}
-
-export function useXOOSPermissions(): XOOSPermissionHelpers {
-  const scopes = useXOOS().context.scopes;
-  const hasScope = (scope: string) => scopes.includes(scope);
-
-  // UI helper only. Runtime BFF must enforce real authorization.
-  return {
-    hasScope,
-    hasAnyScope: (requiredScopes: string[]) => requiredScopes.some(hasScope),
-    hasAllScopes: (requiredScopes: string[]) => requiredScopes.every(hasScope)
-  };
 }

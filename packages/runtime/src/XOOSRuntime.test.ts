@@ -10,6 +10,8 @@ const HASH = `sha256:${"a".repeat(64)}`;
 
 const feedEntry: XOOSFeedMicroapp = {
   microappKey: "application-mgmt",
+  source: "XOOS",
+  permissions: ["READ", "UPDATE"],
   displayName: "Application Management",
   elementName: "xoos-application-management",
   deliveryType: "native_esm",
@@ -94,6 +96,34 @@ describe("XOOSRuntime artifact access validation", () => {
           integrity: `sha256:${"b".repeat(64)}`
         }),
       "MICROAPP_ARTIFACT_INTEGRITY_MISMATCH"
+    );
+  });
+});
+
+
+type ReadAccessValidator = {
+  requireMicroappReadAccess(feedEntry: XOOSFeedMicroapp): void;
+};
+
+function readAccessValidator(): ReadAccessValidator {
+  const runtime = new XOOSRuntime({
+    clientId: "client-test",
+    apiBaseUrl: "https://runtime.example",
+    getAccessToken: async () => "token"
+  });
+
+  return runtime as unknown as ReadAccessValidator;
+}
+
+describe("XOOSRuntime Microapp READ authorization", () => {
+  it("accepts a feed entry with READ permission", () => {
+    expect(() => readAccessValidator().requireMicroappReadAccess(feedEntry)).not.toThrow();
+  });
+
+  it("rejects a feed entry without READ permission", () => {
+    expectRuntimeErrorCode(
+      () => readAccessValidator().requireMicroappReadAccess({ ...feedEntry, permissions: ["UPDATE"] }),
+      "MICROAPP_ACCESS_DENIED"
     );
   });
 });

@@ -1,15 +1,39 @@
 export type XOOSDeliveryType = "native_esm" | "isolated_iframe" | "legacy_iframe";
 
+export type XOOSPermissionAction =
+  | "READ"
+  | "CREATE"
+  | "UPDATE"
+  | "DELETE"
+  | "APPROVE"
+  | "EXPORT"
+  | (string & {});
+
+export type XOOSMicroappSource = "XOOS" | "CLIENT";
+
+export interface XOOSAuthorizedMicroapp {
+  source: XOOSMicroappSource;
+  microappKey: string;
+  permissions: readonly XOOSPermissionAction[];
+}
+
 export interface XOOSRuntimeContext {
   user: { id: string };
   tenant: { id: string | null };
   client: { id: string };
+  application: {
+    id: string;
+    key: string;
+  };
+  roles: string[];
   runtime: { minimumVersion: string };
   scopes: string[];
 }
 
 export interface XOOSFeedMicroapp {
   microappKey: string;
+  source: XOOSMicroappSource;
+  permissions: XOOSPermissionAction[];
   displayName: string;
   elementName: string | null;
   deliveryType: XOOSDeliveryType;
@@ -39,6 +63,11 @@ export interface XOOSRuntimeFeed {
   runtimeVersion: string;
   generatedAt: string;
   microapps: XOOSFeedMicroapp[];
+}
+
+export interface XOOSRuntimeBootstrap {
+  context: XOOSRuntimeContext;
+  feed: XOOSRuntimeFeed;
 }
 
 export interface XOOSMicroappManifest {
@@ -105,8 +134,15 @@ export interface XOOSNavigationOptions {
   props?: Record<string, unknown>;
 }
 
+export interface XOOSPermissionsBridge {
+  list(): readonly string[];
+  can(action: string): boolean;
+  require(action: string): void;
+}
+
 export interface XOOSMicroappBridge {
   context: XOOSRuntimeContext;
+  permissions: XOOSPermissionsBridge;
   navigation: {
     navigate: (
       microappKey: string,

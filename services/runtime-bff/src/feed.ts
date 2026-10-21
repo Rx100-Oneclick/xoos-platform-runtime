@@ -6,6 +6,10 @@ import type {
 } from "@xoos/contracts";
 import type { RuntimeBffConfig } from "./config";
 import { HttpError, type XOIdentity } from "./auth";
+import {
+  findAuthorizedMicroapp,
+  type EffectiveAuthorization
+} from "./authorization";
 
 type DeploymentRow = {
   microapp_id: string;
@@ -48,7 +52,8 @@ export async function buildRuntimeFeed(
   config: RuntimeBffConfig,
   identity: XOIdentity,
   clientId: string,
-  environment: string
+  environment: string,
+  authorization: EffectiveAuthorization
 ): Promise<XOOSRuntimeFeed> {
   assertClientBinding(identity, clientId);
 
@@ -121,6 +126,13 @@ export async function buildRuntimeFeed(
     const entitlement = entitlementMap.get(microapp.uuid);
     if (!entitlement) continue;
 
+    const authorized = findAuthorizedMicroapp(
+      authorization,
+      microapp.microapp_key,
+      "XOOS"
+    );
+    if (!authorized || !authorized.permissions.includes("READ")) continue;
+
     const selected = selectDeployment(
       deploymentMap.get(microapp.uuid) ?? [],
       entitlement
@@ -132,6 +144,8 @@ export async function buildRuntimeFeed(
 
     feedItems.push({
       microappKey: microapp.microapp_key,
+      source: "XOOS",
+      permissions: [...authorized.permissions],
       displayName: microapp.display_name,
       elementName: microapp.element_name,
       deliveryType: microapp.delivery_type,
@@ -157,9 +171,19 @@ export async function issueMicroappArtifactAccess(
   identity: XOIdentity,
   clientId: string,
   environment: string,
-  microappKey: string
+  microappKey: string,
+  authorization: EffectiveAuthorization
 ): Promise<XOOSMicroappArtifactAccess> {
   assertClientBinding(identity, clientId);
+
+  const authorized = findAuthorizedMicroapp(authorization, microappKey, "XOOS");
+  if (!authorized || !authorized.permissions.includes("READ")) {
+    throw new HttpError(
+      403,
+      "MICROAPP_ACCESS_DENIED",
+      `READ permission is required for Microapp '${microappKey}'.`
+    );
+  }
 
   const resolved = await resolveAuthorizedMicroappDeployment(
     db,
