@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getProfileViewerData } from "./profile-viewer-capability";
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
@@ -13,6 +15,8 @@ import {
 
 export interface CapabilityContext {
   identity: XOIdentity;
+  xoAuthDb: SupabaseClient;
+  servicesDb: SupabaseClient;
   clientId: string;
   applicationId: string;
   traceId: string;
@@ -62,6 +66,14 @@ registerBuiltin(
   (context, input) => proxyXOAuthOrganizationMemberUpdate(context, input)
 );
 
+registerCapability("xo-auth.profile.get", {
+  microappKey: "profile-viewer",
+  requiredAction: "READ",
+  handler: (context,input) => getProfileViewerData(context,input,{
+    xoAuthDb:context.xoAuthDb,servicesDb:context.servicesDb
+  })
+});
+
 export function registerCapability(
   name: string,
   registration: Handler | CapabilityRegistration
@@ -95,10 +107,7 @@ export async function executeCapability(
   }
 
   if (registration.requiredAction && registration.microappKey) {
-    if (
-      context.microappKey &&
-      context.microappKey !== registration.microappKey
-    ) {
+    if (context.microappKey !== registration.microappKey) {
       throw new HttpError(
         403,
         "CAPABILITY_MICROAPP_MISMATCH",

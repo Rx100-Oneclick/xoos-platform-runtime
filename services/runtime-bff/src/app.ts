@@ -213,6 +213,8 @@ export function createRuntimeBffHandler(config: RuntimeBffConfig) {
           capability,
           {
             identity,
+            xoAuthDb,
+            servicesDb,
             clientId: headerClientId,
             applicationId: state.access.applicationId,
             traceId,
