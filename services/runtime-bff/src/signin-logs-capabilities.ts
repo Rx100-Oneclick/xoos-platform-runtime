@@ -139,7 +139,7 @@ export async function listSignInLogs(context:CapabilityContext,input:unknown):Pr
     return [m?.fullName,m?.email].some(v=>typeof v==="string"&&v.toLowerCase().includes(f.search));
   });
   const page=filtered.slice(f.offset,f.offset+f.limit);
-  const metadata=await resolveSignInMetadata(context,page,false);
+  const metadata=await resolveSignInMetadata(context,page,true);
   return {
     organization:{...org,user_count:memberRows.length},
     stats:{total:successCount+failedCount,success:successCount,failed:failedCount,mfa_verified:mfaCount,
