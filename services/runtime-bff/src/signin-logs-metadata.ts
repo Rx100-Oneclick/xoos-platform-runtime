@@ -10,7 +10,7 @@ import { HttpError } from "./auth";
  * at most 50 recent events; active-sessions-page-data paginates 100 at a time.
  * Values that cannot be matched by immutable IDs are intentionally null.
  */
-export type SignInAuditRef = { log_id:string; user_id:string|null; details:Record<string,unknown>|null };
+export type SignInAuditRef = { log_id:string; user_id:string|null; client_id:string|null; details:Record<string,unknown>|null };
 export type SignInMetadata = {
   application:string|null; location:string|null; ip_address:string|null;
   device:string|null; mfa_verified:boolean|null; mfa_method:string|null;
@@ -97,69 +97,97 @@ function locationLabel(e:LocationEvent):string|null{
   const parts=[safe(e.city),safe(e.state)??safe(e.region),safe(e.country)].filter(Boolean);
   return parts.length?parts.join(", "):null;
 }
+function locationId(e:SignInAuditRef):string|null {
+  const value=e.details?.location_event_id;
+  return typeof value==="string"&&UUID.test(value)?value:null;
+}
+/**
+ * Audit client ID can independently identify the tenant application.
+ * A session is trusted only if the audit session ID matches, or if the audit
+ * location-event ID references exactly ONE session for the same tenant/user/client.
+ * The location event is validated independently before asking XO Auth for plaintext.
+ */
 export async function resolveSignInMetadata(
   context:CapabilityContext,events:SignInAuditRef[],includeSensitive:boolean
 ):Promise<Map<string,SignInMetadata>> {
   const result=new Map<string,SignInMetadata>();
-  if(events.length===0)return result;
-  const ids=uniq(events.map(sessionId));
-  const sessions=ids.length?await rows<Session>(context.xoAuthDb.from("xo_sessions")
-    .select("session_id,user_id,client_id,location_event_id,mfa_verified,mfa_method,status,risk_level")
-    .eq("tenant_id",context.identity.tenantId).in("session_id",ids)):[];
-  const bySession=new Map(sessions.map(s=>[s.session_id,s]));
-  const clients=uniq(sessions.map(s=>s.client_id));
-  const oauth=clients.length?await rows<{client_id:string;application_id:string|null}>(context.xoAuthDb.from("oauth_clients")
-    .select("client_id,application_id").in("client_id",clients)):[];
-  const applications=uniq(oauth.map(x=>x.application_id));
-  const apps=applications.length?await rows<{uuid:string;app_name:string}>(context.xoAuthDb.from("xo_applications")
-    .select("uuid,app_name").eq("tenant_id",context.identity.tenantId).in("uuid",applications)):[];
-  const nameById=new Map(apps.map(a=>[a.uuid,safe(a.app_name)]));
-  const nameByClient=new Map(oauth.map(c=>[c.client_id,c.application_id?nameById.get(c.application_id)??null:null]));
-
-  const verified=events.map(e=>{
-    const candidateId=sessionId(e),session=candidateId?bySession.get(candidateId):null;
-    return {event:e,session:session&&session.user_id===e.user_id?session:null};
+  if(!events.length)return result;
+  const tenantId=context.identity.tenantId;
+  const sessionIds=uniq(events.map(sessionId));
+  const locationIds=uniq(events.map(locationId));
+  const [byId,byLocation,locationRefs]=await Promise.all([
+    sessionIds.length?rows<Session>(context.xoAuthDb.from("xo_sessions")
+      .select("session_id,user_id,client_id,location_event_id,mfa_verified,mfa_method,status,risk_level")
+      .eq("tenant_id",tenantId).in("session_id",sessionIds)):Promise.resolve([] as Session[]),
+    locationIds.length?rows<Session>(context.xoAuthDb.from("xo_sessions")
+      .select("session_id,user_id,client_id,location_event_id,mfa_verified,mfa_method,status,risk_level")
+      .eq("tenant_id",tenantId).in("location_event_id",locationIds)):Promise.resolve([] as Session[]),
+    locationIds.length?rows<{location_event_id:string;user_id:string|null;client_id:string|null}>(context.xoAuthDb.from("auth_location_events")
+      .select("location_event_id,user_id,client_id").eq("tenant_id",tenantId).in("location_event_id",locationIds)):
+      Promise.resolve([] as {location_event_id:string;user_id:string|null;client_id:string|null}[])
+  ]);
+  const sessionById=new Map(byId.map(s=>[s.session_id,s]));
+  const sessionByLocation=new Map<string,Session[]>();
+  for(const session of byLocation){
+    if(!session.location_event_id)continue;
+    const batch=sessionByLocation.get(session.location_event_id)??[];
+    batch.push(session);
+    sessionByLocation.set(session.location_event_id,batch);
+  }
+  const locationById=new Map(locationRefs.map(l=>[l.location_event_id,l]));
+  const verified=events.map(event=>{
+    const directId=sessionId(event),locId=locationId(event);
+    const exactLocation=locId?locationById.get(locId):null;
+    const location=exactLocation&&exactLocation.user_id===event.user_id
+      &&(!exactLocation.client_id||exactLocation.client_id===event.client_id)?exactLocation:null;
+    const direct=directId?sessionById.get(directId):null;
+    const candidates=location?(sessionByLocation.get(location.location_event_id)??[]).filter(s=>
+      s.user_id===event.user_id && !!event.client_id && s.client_id===event.client_id):[];
+    const session=direct&&direct.user_id===event.user_id
+      &&!!event.client_id&&direct.client_id===event.client_id?direct:
+      !directId&&candidates.length===1?candidates[0]:null;
+    return {event,session,location};
   });
-  // Never call sensitive XO Auth endpoints for unknown or unlinked audit events.
-  const validSessions=verified.map(v=>v.session).filter((v):v is Session=>v!==null);
-  const decrypted=includeSensitive?await sessionDisplay(context,new Set(validSessions.map(s=>s.session_id))):new Map<string,DecryptedSession>();
+  const clientIds=uniq(verified.map(v=>v.event.client_id??v.session?.client_id));
+  const oauth=clientIds.length?await rows<{client_id:string;application_id:string|null}>(context.xoAuthDb.from("oauth_clients")
+    .select("client_id,application_id").in("client_id",clientIds)):[];
+  const applicationIds=uniq(oauth.map(x=>x.application_id));
+  const apps=applicationIds.length?await rows<{uuid:string;app_name:string}>(context.xoAuthDb.from("xo_applications")
+    .select("uuid,app_name").eq("tenant_id",tenantId).in("uuid",applicationIds)):[];
+  const appNames=new Map(apps.map(a=>[a.uuid,safe(a.app_name)]));
+  const clientNames=new Map(oauth.map(c=>[c.client_id,c.application_id?appNames.get(c.application_id)??null:null]));
+
+  const exactSessions=verified.map(x=>x.session).filter((v):v is Session=>!!v);
+  const decrypted=includeSensitive?await sessionDisplay(context,new Set(exactSessions.map(s=>s.session_id))):new Map<string,DecryptedSession>();
   const locations=new Map<string,LocationEvent[]>();
   if(includeSensitive){
-    const users=new Map<string,string|null>();
-    for(const session of validSessions){
-      if(!session.location_event_id)continue;
-      // A query without the optional client filter avoids excluding valid location history.
-      users.set(session.user_id,null);
-    }
-    // XO Auth limits user_details to 50 records; do not scan more than 25 users.
-    if(users.size>25)throw new HttpError(413,"SIGNIN_LOCATION_QUERY_LIMIT","Reduce page size for location enrichment.");
-    await Promise.all([...users].map(async ([user,client])=>{
-      try{locations.set(user,await locationDisplay(context,user,client));}
+    const users=uniq(verified.filter(v=>v.location).map(v=>v.event.user_id));
+    if(users.length>25)throw new HttpError(413,"SIGNIN_LOCATION_QUERY_LIMIT","Reduce page size for authorized location enrichment.");
+    await Promise.all(users.map(async user=>{
+      try{locations.set(user,await locationDisplay(context,user,null));}
       catch(e){
-        // Existing endpoint returns 404 when user has no location data.
-        // Never suppress denied access, crypto errors or service failure.
         if(e instanceof HttpError&&e.status===404){locations.set(user,[]);return;}
         throw e;
       }
     }));
   }
-  for(const {event,session} of verified){
-    const details=session?decrypted.get(session.session_id):null;
-    // Do not use a decrypted record from a mismatched user.
-    const authorizedDetails=details&&details.user_id===event.user_id?details:null;
-    const location=session?.location_event_id
-      ?(locations.get(session.user_id)??[]).find(l=>l.location_event_id===session.location_event_id
-        &&(l.user_id===null||l.user_id===session.user_id)
-        &&(!l.client_id||!session.client_id||l.client_id===session.client_id))
-      :null;
+  for(const {event,session,location} of verified){
+    const display=session?decrypted.get(session.session_id):null;
+    const authorizedDisplay=display&&display.user_id===event.user_id
+      &&(!event.client_id||display.client_id===event.client_id)?display:null;
+    const exactLocation=location?(locations.get(event.user_id??"")??[]).find(l=>
+      l.location_event_id===location.location_event_id
+      &&l.user_id===event.user_id
+      &&(!l.client_id||l.client_id===event.client_id)):null;
+    const clientId=event.client_id??session?.client_id;
     result.set(event.log_id,{
-      application:session?.client_id?nameByClient.get(session.client_id)??null:null,
-      location:location?locationLabel(location):null,
-      ip_address:safe(authorizedDetails?.ip_address),
-      device:safe(authorizedDetails?.device_label),
-      mfa_verified:authorizedDetails?.mfa_verified??session?.mfa_verified??null,
-      mfa_method:safe(authorizedDetails?.mfa_method??session?.mfa_method),
-      session_status:safe(authorizedDetails?.status??session?.status),
+      application:clientId?clientNames.get(clientId)??null:null,
+      location:exactLocation?locationLabel(exactLocation):null,
+      ip_address:safe(authorizedDisplay?.ip_address),
+      device:safe(authorizedDisplay?.device_label),
+      mfa_verified:authorizedDisplay?.mfa_verified??session?.mfa_verified??null,
+      mfa_method:safe(authorizedDisplay?.mfa_method??session?.mfa_method),
+      session_status:safe(authorizedDisplay?.status??session?.status),
       risk_level:safe(session?.risk_level),
       correlated_session:!!session
     });
