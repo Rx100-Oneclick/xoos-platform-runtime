@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "./auth";
 import type { CapabilityContext } from "./capabilities";
+import { resolveProfileRoleName, type ProfileRoleRow } from "./profile-role-resolution";
 
 type ProfileDeps = { xoAuthDb: SupabaseClient; servicesDb: SupabaseClient };
 const db = async <T>(request: PromiseLike<{data:T|null;error:any}>):Promise<T> => {
@@ -48,7 +49,7 @@ export async function getProfileViewerData(
     db<any[]>(xoAuthDb.from("organization_member_applications").select("application_id,access_status,granted_by,activated_at")
       .eq("tenant_id",tenantId).eq("member_id",member.member_id)),
     db<any[]>(xoAuthDb.from("xo_applications").select("uuid,app_name").eq("tenant_id",tenantId)),
-    member.role_id ? db<any[]>(servicesDb.from("roles").select("uuid,name").eq("uuid",member.role_id).eq("tenant_id",tenantId).limit(1)):Promise.resolve([]),
+    member.role_id ? db<ProfileRoleRow[]>(servicesDb.from("roles").select("uuid,name,tenant_id,role_type,system_defined,status").eq("uuid",member.role_id).limit(2)):Promise.resolve([]),
     db<any[]>(servicesDb.from("user_application_roles").select("application_id,role_id").eq("user_id",userId).eq("tenant_id",tenantId)),
     db<any[]>(xoAuthDb.from("xo_sessions").select("login_at").eq("user_id",userId).eq("tenant_id",tenantId).order("login_at",{ascending:false}).limit(1)),
     db<any[]>(xoAuthDb.from("mfa_factors").select("type,verified,is_active").eq("user_id",userId).eq("tenant_id",tenantId))
@@ -72,7 +73,7 @@ export async function getProfileViewerData(
       full_name:typeof identity.name==="string"?identity.name:null,
       email:typeof identity.email==="string"?identity.email:null,
       // Encrypted member mobile_number requires authorized XO Crypto decryption.
-      phone:null,role:tenantRoles[0]?.name??null,designation:member.designation,
+      phone:null,role:resolveProfileRoleName(tenantRoles, member.role_id, tenantId),designation:member.designation,
       business_unit:member.business_unit,join_date:member.assigned_on??member.created_at,
       last_login:sessions[0]?.login_at??null,
       organization_name:typeof identity.organization.name==="string"?identity.organization.name:null,
