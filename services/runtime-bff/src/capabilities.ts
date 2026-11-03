@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProfileViewerData } from "./profile-viewer-capability";
 import { listIdentityUsers, getIdentityUser, listIdentityEvents } from "./user-identity-capabilities";
+import { listSignInLogs, getSignInLogDetail, listSignInLogTimeline } from "./signin-logs-capabilities";
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
 import { HttpError } from "./auth";
@@ -87,6 +88,10 @@ registerCapability("xo-auth.identity.events.list", {
   microappKey: "user-identity", requiredAction: "READ",
   handler: listIdentityEvents
 });
+
+registerCapability("xo-auth.signin-logs.list", {microappKey:"signin-logs",requiredAction:"READ",handler:listSignInLogs});
+registerCapability("xo-auth.signin-logs.detail", {microappKey:"signin-logs",requiredAction:"READ",handler:getSignInLogDetail});
+registerCapability("xo-auth.signin-logs.timeline", {microappKey:"signin-logs",requiredAction:"READ",handler:listSignInLogTimeline});
 
 export function registerCapability(
   name: string,
