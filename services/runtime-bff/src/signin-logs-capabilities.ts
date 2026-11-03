@@ -1,5 +1,6 @@
 import type { CapabilityContext } from "./capabilities";
 import { HttpError } from "./auth";
+import { enrichSignInEvents, type Enrichment } from "./signin-logs-enrichment";
 
 /**
  * Sign-in log capabilities. Only tenant-attributed audit records are returned.
@@ -119,21 +120,11 @@ async function auditEvents(context:CapabilityContext,f:Filters) {
   if(result.length>2000)throw new HttpError(413,"SIGNIN_EVENT_LIMIT","Too many audit events for this date window. Narrow the date range.");
   return result;
 }
-function summarize(e:AuditEvent,byUser:Map<string,Member>){
+function summarize(e:AuditEvent,byUser:Map<string,Member>,extra:Enrichment|null){
   const member=byUser.get(e.user_id??"")??null;
-  // No inferred session/application/location for non-correlated audit events.
   return {log_id:e.log_id,user_id:e.user_id,name:member?.fullName??null,email:member?.email??null,
-    avatar_url:member?.avatarUrl??null,status:eventStatus(e),application:null,device:null,ip_address:e.ip_address??null,
-    location:null,sign_in_time:e.created_at,mfa_verified:null};
-}
-async function sessionFor(context:CapabilityContext,event:AuditEvent):Promise<any|null>{
-  const sessionId=event.details?.session_id;
-  if(typeof sessionId!=="string"||!/^[0-9a-f-]{36}$/i.test(sessionId))return null;
-  const sessions=await rows(context.xoAuthDb.from("xo_sessions")
-    .select("session_id,user_id,tenant_id,application_id,client_id,ip_address,user_agent,location_event_id,trusted_device_id,mfa_verified,mfa_method,status,risk_level,login_at")
-    .eq("tenant_id",context.identity.tenantId).eq("session_id",sessionId).limit(1));
-  const item=sessions[0]??null;
-  return item&&item.user_id===event.user_id?item:null;
+    avatar_url:member?.avatarUrl??null,status:eventStatus(e),application:extra?.application??null,
+    location:extra?.location??null,sign_in_time:e.created_at,mfa_verified:extra?.session?.mfa_verified??null};
 }
 export async function listSignInLogs(context:CapabilityContext,input:unknown):Promise<unknown>{
   const f=filters(input);
@@ -145,13 +136,16 @@ export async function listSignInLogs(context:CapabilityContext,input:unknown):Pr
   const filtered=events.filter(e=>{
     if(!f.search)return true;
     const m=byUser.get(e.user_id??"");
-    return [m?.fullName,m?.email,e.ip_address].some(v=>typeof v==="string"&&v.toLowerCase().includes(f.search));
+    return [m?.fullName,m?.email].some(v=>typeof v==="string"&&v.toLowerCase().includes(f.search));
   });
+  // Enrich only the visible page using exact audit details.session_id correlation.
+  const page=filtered.slice(f.offset,f.offset+f.limit);
+  const enriched=await enrichSignInEvents(context,page);
   return {
     organization:{...org,user_count:memberRows.length},
     stats:{total:successCount+failedCount,success:successCount,failed:failedCount,mfa_verified:mfaCount,
       failed_count_complete:false,failed_count_note:"Historical failed logins without verified tenant attribution are excluded."},
-    logs:filtered.slice(f.offset,f.offset+f.limit).map(e=>summarize(e,byUser)),
+    logs:page.map(e=>summarize(e,byUser,enriched.get(e.log_id)??null)),
     pagination:{limit:f.limit,offset:f.offset,total:filtered.length},
     metadata:{session_details_may_be_unavailable:true,unattributed_failed_logins_excluded:true}
   };
@@ -165,34 +159,20 @@ async function selectedEvent(context:CapabilityContext,input:unknown):Promise<Au
   return result[0];
 }
 export async function getSignInLogDetail(context:CapabilityContext,input:unknown):Promise<unknown>{
-  const event=await selectedEvent(context,input);
-  const [list,session]=await Promise.all([members(context),sessionFor(context,event)]);
-  const member=list.find(m=>m.userId===event.user_id)??null;
-  let appName:string|null=null,location:string|null=null,device:string|null=null, trustedDevice:boolean|null=null;
-  if(session?.application_id){
-    const apps=await rows(context.xoAuthDb.from("xo_applications").select("app_name")
-      .eq("tenant_id",context.identity.tenantId).eq("uuid",session.application_id).limit(1));
-    appName=apps[0]?.app_name??null;
-  }
-  if(session?.location_event_id){
-    const locations=await rows(context.xoAuthDb.from("auth_location_events").select("city,region,country")
-      .eq("tenant_id",context.identity.tenantId).eq("location_event_id",session.location_event_id).limit(1));
-    const loc=locations[0];location=loc?[loc.city,loc.region,loc.country].filter(Boolean).join(", ")||null:null;
-  }
-  if(session?.trusted_device_id){
-    const devices=await rows(context.xoAuthDb.from("mfa_trusted_devices").select("device_name,browser,trust_status")
-      .eq("tenant_id",context.identity.tenantId).eq("trusted_device_id",session.trusted_device_id).limit(1));
-    device=devices[0]?.device_name??null;trustedDevice=devices[0]?devices[0].trust_status==="trusted":null;
-  }
-  return {
-    log_id:event.log_id,user:{name:member?.fullName??null,email:member?.email??null,avatar_url:member?.avatarUrl??null},
-    status:eventStatus(event),application:appName,device,browser:null,
-    ip_address:event.ip_address??session?.ip_address??null,location,sign_in_time:event.created_at,
-    authentication_method:session?.mfa_method??null,mfa_verified:session?.mfa_verified??null,
-    security:{risk_level:session?.risk_level??null,new_device:null,suspicious_ip:null,
-      session_status:session?.status??null,trusted_device:trustedDevice},
-    metadata:{correlated_session:!!session}
-  };
+ const event=await selectedEvent(context,input);
+ const [memberList,enriched]=await Promise.all([members(context),enrichSignInEvents(context,[event])]);
+ const member=memberList.find(m=>m.userId===event.user_id)??null;
+ const extra=enriched.get(event.log_id)??null;
+ const session=extra?.session??null;
+ return {
+  log_id:event.log_id,user:{name:member?.fullName??null,email:member?.email??null,avatar_url:member?.avatarUrl??null},
+  status:eventStatus(event),application:extra?.application??null,device:extra?.device??null,
+  ip_address:extra?.ip_address??null,location:extra?.location??null,sign_in_time:event.created_at,
+  authentication_method:session?.mfa_method??null,mfa_verified:session?.mfa_verified??null,
+  security:{risk_level:session?.risk_level??null,new_device:null,suspicious_ip:null,
+    session_status:session?.status??null,trusted_device:null},
+  metadata:{correlated_session:!!session}
+ };
 }
 export async function listSignInLogTimeline(context:CapabilityContext,input:unknown):Promise<unknown>{
   const v=obj(input);const selected=await selectedEvent(context,input);
