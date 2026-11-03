@@ -143,9 +143,9 @@ export async function resolveSignInMetadata(
     const direct=directId?sessionById.get(directId):null;
     const candidates=location?(sessionByLocation.get(location.location_event_id)??[]).filter(s=>
       s.user_id===event.user_id && !!event.client_id && s.client_id===event.client_id):[];
-    const session=direct&&direct.user_id===event.user_id
-      &&!!event.client_id&&direct.client_id===event.client_id?direct:
-      !directId&&candidates.length===1?candidates[0]:null;
+    const session=directId
+      ?(direct&&direct.user_id===event.user_id&&!!event.client_id&&direct.client_id===event.client_id?direct:null)
+      :(candidates.length===1?candidates[0]:null);
     return {event,session,location};
   });
   const clientIds=uniq(verified.map(v=>v.event.client_id??v.session?.client_id));
