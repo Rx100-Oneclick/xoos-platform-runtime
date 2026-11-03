@@ -53,7 +53,7 @@ async function xoAuthPost(context:CapabilityContext,endpoint:string,input:Record
     }),signal:AbortSignal.timeout(20000)});
   }catch{throw new HttpError(502,"SIGNIN_XO_AUTH_UNAVAILABLE","XO Auth decrypted data service unavailable.");}
   if(!response.ok){
-    throw new HttpError(response.status===401?401:response.status===403?403:502,
+    throw new HttpError(response.status===404?404:response.status===401?401:response.status===403?403:502,
       "SIGNIN_XO_AUTH_RESOURCE_FAILED","Authorized XO Auth metadata could not be retrieved.");
   }
   const body=await response.json().catch(()=>null);
@@ -138,7 +138,7 @@ export async function resolveSignInMetadata(
       catch(e){
         // Existing endpoint returns 404 when user has no location data.
         // Never suppress denied access, crypto errors or service failure.
-        if(e instanceof HttpError&&e.status===502)throw e;
+        if(e instanceof HttpError&&e.status===404){locations.set(user,[]);return;}
         throw e;
       }
     }));
