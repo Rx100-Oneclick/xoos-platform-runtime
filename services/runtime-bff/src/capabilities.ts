@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProfileViewerData } from "./profile-viewer-capability";
 import { listIdentityUsers, getIdentityUser, listIdentityEvents } from "./user-identity-capabilities";
+import { deleteIdentityUser } from "./identity-delete-capability";
 import { listSignInLogs, getSignInLogDetail, listSignInLogTimeline } from "./signin-logs-capabilities";
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
@@ -87,6 +88,10 @@ registerCapability("xo-auth.identity.user.get", {
 registerCapability("xo-auth.identity.events.list", {
   microappKey: "user-identity", requiredAction: "READ",
   handler: listIdentityEvents
+});
+registerCapability("xo-auth.identity.user.delete", {
+  microappKey: "user-identity", requiredAction: "DELETE",
+  handler: deleteIdentityUser
 });
 
 registerCapability("xo-auth.signin-logs.list", {microappKey:"signin-logs",requiredAction:"READ",handler:listSignInLogs});
