@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProfileViewerData } from "./profile-viewer-capability";
 import { listIdentityUsers, getIdentityUser, listIdentityEvents } from "./user-identity-capabilities";
 import { deleteIdentityUser } from "./identity-delete-capability";
+import { deletedUsersSummary,deletedUsersList,deletedUserDetail,deletedUserTimeline,deletedUserRestore,deletedUserPurge } from "./deleted-users-capabilities";
 import { listSignInLogs, getSignInLogDetail, listSignInLogTimeline } from "./signin-logs-capabilities";
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
@@ -93,6 +94,13 @@ registerCapability("xo-auth.identity.user.delete", {
   microappKey: "user-identity", requiredAction: "DELETE",
   handler: deleteIdentityUser
 });
+
+registerCapability("xo-auth.deleted-users.summary", {microappKey:"deleted-users",requiredAction:"READ",handler:deletedUsersSummary});
+registerCapability("xo-auth.deleted-users.list", {microappKey:"deleted-users",requiredAction:"READ",handler:deletedUsersList});
+registerCapability("xo-auth.deleted-users.detail", {microappKey:"deleted-users",requiredAction:"READ",handler:deletedUserDetail});
+registerCapability("xo-auth.deleted-users.timeline", {microappKey:"deleted-users",requiredAction:"READ",handler:deletedUserTimeline});
+registerCapability("xo-auth.deleted-users.restore", {microappKey:"deleted-users",requiredAction:"UPDATE",handler:deletedUserRestore});
+registerCapability("xo-auth.deleted-users.purge", {microappKey:"deleted-users",requiredAction:"DELETE",handler:deletedUserPurge});
 
 registerCapability("xo-auth.signin-logs.list", {microappKey:"signin-logs",requiredAction:"READ",handler:listSignInLogs});
 registerCapability("xo-auth.signin-logs.detail", {microappKey:"signin-logs",requiredAction:"READ",handler:getSignInLogDetail});
