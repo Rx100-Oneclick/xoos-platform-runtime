@@ -3,6 +3,7 @@ import { getProfileViewerData } from "./profile-viewer-capability";
 import { listIdentityUsers, getIdentityUser, listIdentityEvents } from "./user-identity-capabilities";
 import { deleteIdentityUser } from "./identity-delete-capability";
 import { deletedUsersSummary,deletedUsersList,deletedUserDetail,deletedUserTimeline,deletedUserRestore,deletedUserPurge } from "./deleted-users-capabilities";
+import {auditList,auditDetail,auditSummary,auditFilters} from "./audit-logs-capabilities";
 import { listSignInLogs, getSignInLogDetail, listSignInLogTimeline } from "./signin-logs-capabilities";
 import type { XOOSCapabilityResponse } from "@xoos/contracts";
 import type { XOIdentity } from "./auth";
@@ -101,6 +102,11 @@ registerCapability("xo-auth.deleted-users.detail", {microappKey:"deleted-users",
 registerCapability("xo-auth.deleted-users.timeline", {microappKey:"deleted-users",requiredAction:"READ",handler:deletedUserTimeline});
 registerCapability("xo-auth.deleted-users.restore", {microappKey:"deleted-users",requiredAction:"UPDATE",handler:deletedUserRestore});
 registerCapability("xo-auth.deleted-users.purge", {microappKey:"deleted-users",requiredAction:"DELETE",handler:deletedUserPurge});
+
+registerCapability("xoos.audit-logs.list",{microappKey:"audit-logs",requiredAction:"READ",handler:auditList});
+registerCapability("xoos.audit-logs.summary",{microappKey:"audit-logs",requiredAction:"READ",handler:auditSummary});
+registerCapability("xoos.audit-logs.detail",{microappKey:"audit-logs",requiredAction:"READ",handler:auditDetail});
+registerCapability("xoos.audit-logs.filters",{microappKey:"audit-logs",requiredAction:"READ",handler:auditFilters});
 
 registerCapability("xo-auth.signin-logs.list", {microappKey:"signin-logs",requiredAction:"READ",handler:listSignInLogs});
 registerCapability("xo-auth.signin-logs.detail", {microappKey:"signin-logs",requiredAction:"READ",handler:getSignInLogDetail});
