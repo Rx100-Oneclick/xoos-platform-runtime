@@ -25,9 +25,16 @@ function cursorDecode(v:any){if(!v)return null;if(typeof v!=="string"||v.length>
 function compare(a:Event,b:Event){return b.timestamp.localeCompare(a.timestamp)||b.source.localeCompare(a.source)||b.id.localeCompare(a.id)}
 function before(e:Event,c:{t:string;s:Source;id:string}){return e.timestamp<c.t||(e.timestamp===c.t&&(e.source<c.s||(e.source===c.s&&e.id.slice(e.source.length+1)<c.id)))}
 async function read(p:PromiseLike<{data:any,error:any}>){const x=await p;if(x.error)throw new Error("Audit source query failed");return x.data??[]}
-function query(c:CapabilityContext,src:Source,tenantId:string,since:string,limit:number){
- if(src==="XO_AUTH")return c.xoAuthDb.from("auth_audit_logs").select("log_id,event_type,actor_user_id,user_id,client_id,severity,created_at").eq("tenant_id",tenantId).gte("created_at",since).order("created_at",{ascending:false}).order("log_id",{ascending:false}).limit(limit);
- return c.servicesDb.from("audit_events").select("audit_event_id,event_type,trace_id,request_id,source_system,actor,subject,context,occurred_at").eq("tenant_id",tenantId).gte("occurred_at",since).order("occurred_at",{ascending:false}).order("audit_event_id",{ascending:false}).limit(limit);
+function query(c:CapabilityContext,src:Source,tenantId:string,since:string,limit:number,cursor:{t:string;s:Source;id:string}|null){
+ const time=src==="XO_AUTH"?"created_at":"occurred_at",pk=src==="XO_AUTH"?"log_id":"audit_event_id";
+ let q=src==="XO_AUTH"?c.xoAuthDb.from("auth_audit_logs").select("log_id,event_type,actor_user_id,user_id,client_id,severity,created_at").eq("tenant_id",tenantId).gte(time,since):
+ c.servicesDb.from("audit_events").select("audit_event_id,event_type,trace_id,request_id,source_system,actor,subject,context,occurred_at").eq("tenant_id",tenantId).gte(time,since);
+ if(cursor){
+  if(src===cursor.s)q=q.or(`${time}.lt.${cursor.t},and(${time}.eq.${cursor.t},${pk}.lt.${cursor.id})`);
+  else if(src<cursor.s)q=q.lte(time,cursor.t);
+  else q=q.lt(time,cursor.t);
+ }
+ return q.order(time,{ascending:false}).order(pk,{ascending:false}).limit(limit);
 }
 async function security(tenantId:string,since:string,limit:number,cursor:any,mode:"list"|"summary"|"detail",id?:string){
  const url=Deno.env.get("SECURITY_AUDIT_READER_URL")?.trim(),token=Deno.env.get("SECURITY_AUDIT_READER_TOKEN")?.trim();
@@ -73,7 +80,7 @@ export async function auditList(c:CapabilityContext,value:unknown){
  const states:Record<Source,"ok"|"unavailable"|"error">={XO_AUTH:"unavailable",SERVICES:"unavailable",SECURITY:"unavailable"};
  const out=await Promise.all(src.map(async(source)=>{
   if(source==="SECURITY"){const r=await security(tid,f.since,limit+25,cursor,"list");states.SECURITY=r.state;return r.rows.map(row=>normalize(source,row))}
-  try{const rows=await read(query(c,source,tid,f.since,limit+25));states[source]="ok";return rows.map((row:Row)=>normalize(source,row));}catch{states[source]="error";return [] as Event[];}
+  try{const rows=await read(query(c,source,tid,f.since,limit+25,cursor));states[source]="ok";return rows.map((row:Row)=>normalize(source,row));}catch{states[source]="error";return [] as Event[];}
  }));
  let combined=out.flat().sort(compare);
  if(cursor)combined=combined.filter(e=>before(e,cursor));
